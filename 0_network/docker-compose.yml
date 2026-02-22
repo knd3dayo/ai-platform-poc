@@ -1,0 +1,11 @@
+services:
+  # ネットワーク作成を目的としたダミーサービス
+  # `docker compose up` 実行時に ai_platform_net が確実に作成されるようにする
+  net-init:
+    image: alpine:3.20
+    command: ["sh", "-lc", "echo ai_platform_net ready"]
+
+networks:
+  default:
+    name: ai_platform_net
+    driver: bridge

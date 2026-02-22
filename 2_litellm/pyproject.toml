@@ -14,9 +14,9 @@ dependencies = [
     "python-dotenv",
     "pydantic",
     "litellm",
-    "litellm[proxy]",
     "pyyaml",
     "openai",
+    "fastmcp",
     "pytest",
 ]
 

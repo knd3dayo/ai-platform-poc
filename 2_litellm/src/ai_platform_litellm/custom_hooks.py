@@ -6,12 +6,14 @@ class MyEnterpriseGuardrail(CustomLogger):
         messages = data.get("messages", [])
         for msg in messages:
             content = msg.get("content", "")
-            # 例: 簡易的な禁止ワードチェック（インジェクション検知のモック）
-            if "社外秘" in content or "password" in content:
+            # 例: 簡易的な禁止ワードチェック
+            if "litellm_ng_test" in content or "社外秘" in content or "password" in content:
                 raise Exception("【Security Alert】機密情報が含まれているため、リクエストを遮断しました。")
         return data
 
     # 【出力ゲート】LLMから応答を受け取った直後に発火
     async def async_post_call_success_hook(self, data, user_api_key_dict, response):
-        # ここで応答内容のDLP（情報漏洩）スキャンや、MCP呼び出しパラメータの検証を行います
         pass
+
+# ↓↓↓ 【重要】この1行を末尾に追加してインスタンスを作成します ↓↓↓
+proxy_handler_instance = MyEnterpriseGuardrail()

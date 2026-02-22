@@ -1,19 +1,8 @@
-.git/
-.github/
-.pytest_cache/
-.venv/
-__pycache__/
-**/__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Not required inside the runtime image
-tests/
-work/
-
-# Compose files live outside the image
-docker/
-
-# Lockfiles used by uv
-!uv.lock
+Dockerfile
+.dockerignore
+node_modules
+npm-debug.log
+README.md
+**/.next
+.git
+**/node_modules
