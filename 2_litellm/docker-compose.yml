@@ -15,7 +15,9 @@ services:
     ports:
       - "4000:4000"
     command: [ "--config", "/app/config.yaml", "--detailed_debug" ]
-
+    extra_hosts:
+      - "localhost:host-gateway"
+  
   mcp-server:
     # FastMCP(=MCPサーバー) を uv で起動する軽量コンテナ
     image: ghcr.io/astral-sh/uv:python3.11-bookworm-slim
@@ -27,6 +29,7 @@ services:
       - mcp_server_venv:/app/.venv
     environment:
       - PYTHONUNBUFFERED=1
+      - LITELLM_LOG=DEBUG
     ports:
       - "5001:5001"
     # 起動時に依存解決→MCPサーバー起動

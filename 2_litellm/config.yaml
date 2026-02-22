@@ -14,3 +14,4 @@ mcp_servers:
   my_hello_mcp:
     url: "http://mcp-server:5001/mcp"   # FastMCPの Streamable HTTP のデフォルトパス
     type: "http"                        # LiteLLM側で Streamable HTTP を指定する値
+    extra_headers: ["Authorization", "litellm-api-key", "test"]  # ここで指定したヘッダーは、LiteLLMからMCPサーバーに転送される
