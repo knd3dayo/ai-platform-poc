@@ -1,0 +1,23 @@
+version: '3.8'
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      # 同一ネットワーク内のLangfuseコンテナ名を指定
+      - LANGFUSE_HOST=http://langfuse:3000
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      # src配下のパッケージディレクトリごとマウント
+      - ./src/ai_platform_litellm:/app/ai_platform_litellm
+    ports:
+      - "4000:4000"
+    command: [ "--config", "/app/config.yaml", "--detailed_debug" ]
+
+networks:
+  default:
+    name: ai_platform_net
+    external: true

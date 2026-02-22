@@ -1,0 +1,16 @@
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+litellm_settings:
+  # 非同期評価・トレース（課題9, 10）: Langfuseへの送信を有効化
+  success_callbacks: ["langfuse"]
+  failure_callbacks: ["langfuse"]
+
+general_settings:
+  # 同期ガードレール（課題4）: 自作のPythonフックを読み込む
+  custom_callbacks:
+    # パッケージ名.モジュール名.クラス名
+    - ai_platform_litellm.custom_hooks.MyEnterpriseGuardrail

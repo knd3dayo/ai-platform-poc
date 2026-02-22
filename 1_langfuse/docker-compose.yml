@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # --- 1. 統合監視・プロンプトCMS (Langfuse) ---
+  langfuse-db:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - langfuse_db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  langfuse:
+    image: langfuse/langfuse:latest
+    depends_on:
+      - langfuse-db
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - SALT=${SALT}
+    ports:
+      - "3000:3000"
+
+  # --- 2. AI Assurance層 (LiteLLM Proxy) ---
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    depends_on:
+      - langfuse
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Langfuseへの連携設定（コンテナ間通信）
+      - LANGFUSE_PUBLIC_KEY=pk-lf-...(Langfuse画面で取得したキーを設定)
+      - LANGFUSE_SECRET_KEY=sk-lf-...(Langfuse画面で取得したキーを設定)
+      - LANGFUSE_HOST=http://langfuse:3000
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml
+      - ./litellm/custom_hooks.py:/app/custom_hooks.py
+    ports:
+      - "4000:4000"
+    command: [ "--config", "/app/config.yaml", "--detailed_debug" ]
+
+volumes:
+  langfuse_db_data:
+
+networks:
+  default:
+    name: ai_platform_net
+    driver: bridge  # 自動で作成されるように明示
+    
