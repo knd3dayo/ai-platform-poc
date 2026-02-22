@@ -1,12 +1,12 @@
 import asyncio
-import json
-from typing import Annotated, Dict
+import argparse
+from typing import Annotated
 from fastmcp import FastMCP
 # あなたの作成したモジュールをインポート
 from ai_platform_litellm.tool_wrapper import identity_aware_tool, current_raw_headers
 
 # --- 3. メイン処理 ---
-mcp = FastMCP("OIDC-Test-Server")
+mcp = FastMCP("Test-Server")
 
 @identity_aware_tool(mcp)
 async def hello(name: Annotated[str, "Your name"]) -> str:
@@ -27,7 +27,12 @@ async def hello(name: Annotated[str, "Your name"]) -> str:
     )
 
 async def main():
-    port = 5001
+    # -p --port オプションでポートを指定できるようにする
+    parser = argparse.ArgumentParser(description="Identity-Aware MCP Server")
+    parser.add_argument("-p", "--port", type=int, default=5101, help="Port to run the MCP server on")
+    args = parser.parse_args()
+
+    port = args.port
     print(f"🚀 Starting Identity-Aware MCP server on port {port}...")
     # 実際には identity_aware_tool のラッパー内で 
     # current_raw_headers.set(context.request.headers) 
