@@ -1,0 +1,13 @@
+# config.yml
+backends:
+  # Difyワークフローの定義
+  finance_workflow:
+    type: "dify"
+    url: "http://localhost:9080/v1/workflows/run"
+    api_key: "app-finance-master-key"
+  
+  # LangGraphエージェントの定義
+  langgraph_hitl_agent:
+    type: "langgraph"
+    url: "http://localhost:5201/api/chat"
+    internal_key: "internal-s2s-key"

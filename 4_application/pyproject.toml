@@ -20,7 +20,8 @@ dependencies = [
     "langchain-openai",
     "fastapi",
     "langgraph-checkpoint-sqlite",
-    "uvicorn"
+    "uvicorn",
+    "aiosqlite"
 ]
 
 [tool.setuptools.packages.find]

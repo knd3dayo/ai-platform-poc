@@ -1,93 +1,137 @@
 import secrets
-from fastapi import Header, HTTPException, Depends
-from typing import Optional
-import secrets
 import httpx
+import yaml
 from fastapi import FastAPI, Request, Header, HTTPException, Depends
 from typing import Optional
 
-app = FastAPI(title="AI-Agent BFF Gateway")
+app = FastAPI(title="AI-Agent Configurable BFF")
+
+# --- 設定読み込み ---
+with open("config.yml", "r") as f:
+    CONFIG = yaml.safe_load(f)
+    BACKENDS = CONFIG.get("backends", {})
 
 # --- 共通ガードレール（依存関数） ---
-
 async def agent_gatekeeper(
     authorization: Optional[str] = Header(None),
     traceparent: Optional[str] = Header(None)
 ):
-    """
-    全てのAPIエンドポイントの入り口で実行されるガードレール
-    """
-    # 1. 認証チェック（AuthN）
     if not authorization or not authorization.startswith("Bearer "):
-        # 本来はここでIdPのログインURLへ誘導するレスポンスを検討
-        raise HTTPException(status_code=401, detail="Please login via IdP to obtain a Bearer token")
+        raise HTTPException(status_code=401, detail="Valid Bearer token required")
     
     access_token = authorization.replace("Bearer ", "")
-
-    # 2. トレース管理（Observability）
-    if traceparent:
-        parts = traceparent.split("-")
-        if len(parts) == 4:
-            tid = parts[1]
-            full_tp = traceparent
-        else:
-            # 不正なフォーマットなら再生成
-            tid = secrets.token_hex(16)
-            full_tp = f"00-{tid}-{secrets.token_hex(8)}-01"
+    
+    # トレースID生成/継承
+    if traceparent and len(traceparent.split("-")) == 4:
+        tid = traceparent.split("-")[1]
+        full_tp = traceparent
     else:
-        # 新規生成
         tid = secrets.token_hex(16)
         full_tp = f"00-{tid}-{secrets.token_hex(8)}-01"
 
-    # 後続に渡す情報をパッケージ化
     return {
         "access_token": access_token,
         "trace_id": tid,
         "traceparent": full_tp
     }
 
-@app.post("/api/v1/workflow/finance")
-async def run_finance_workflow(
+# --- 動的ルーティングエンドポイント ---
+
+@app.post("/api/v1/execute/{backend_key}")
+async def execute_agent(
+    backend_key: str,
     query: str,
-    gate: dict = Depends(agent_gatekeeper) # ここで保護！
+    gate: dict = Depends(agent_gatekeeper)
 ):
-    # Dify用の固定APIキーを特定（BFFが秘匿管理）
-    DIFY_KEY = "app-finance-master-key"
+    # 1. config.yml からバックエンド設定を取得
+    cfg = BACKENDS.get(backend_key)
+    if not cfg:
+        raise HTTPException(status_code=404, detail=f"Backend '{backend_key}' not found in config")
 
-    payload = {
-        "inputs": {
-            "access_token": gate["access_token"], # ユーザー個人の権限
-            "trace_id": gate["trace_id"]           # 運び屋変数
-        },
-        "query": query,
-        "user": "unique_user_id",
-        "response_mode": "blocking"
-    }
+    backend_type = cfg.get("type")
+    url = cfg.get("url")
 
-    # Dify API実行...
-    # return response
+    async with httpx.AsyncClient() as client:
+        # 2. バックエンドの型に応じてペイロードを構築
+        if backend_type == "dify":
+            payload = {
+                "inputs": {
+                    "access_token": gate["access_token"],
+                    "trace_id": gate["trace_id"]
+                },
+                "query": query,
+                "user": "unique_user_id",
+                "response_mode": "blocking"
+            }
+            headers = {
+                "Authorization": f"Bearer {cfg.get('api_key')}",
+                "traceparent": gate["traceparent"]
+            }
 
-@app.post("/api/v1/agent/direct")
-async def run_langgraph_agent(
-    message: str,
-    gate: dict = Depends(agent_gatekeeper) # 同じガードレールを適用！
+        elif backend_type == "langgraph":
+            payload = {
+                "message": query,
+                "thread_id": gate["trace_id"],
+                "metadata": {
+                    "user_access_token": gate["access_token"]
+                }
+            }
+            headers = {
+                "Authorization": f"Bearer {cfg.get('internal_key')}",
+                "traceparent": gate["traceparent"]
+            }
+        
+        else:
+            raise HTTPException(status_code=500, detail="Unknown backend type")
+
+        # 3. 実行
+        try:
+            response = await client.post(url, json=payload, headers=headers, timeout=60.0)
+            response.raise_for_status()
+            return {
+                "backend": backend_key,
+                "trace_id": gate["trace_id"],
+                "data": response.json()
+            }
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+# bff_server.py へ追記
+@app.post("/api/v1/resume/{backend_key}")
+async def resume_agent(
+    backend_key: str,
+    action: str, # "approve" or "cancel"
+    trace_id: str, # 初回にBFFから返されたtrace_idを指定
+    gate: dict = Depends(agent_gatekeeper)
 ):
-    # LangGraphバックエンド（自作API）へのリクエスト
-    # trace_id を thread_id に指定することで、ログと状態を完全に統合する
-    langgraph_url = f"http://langgraph-api/chat"
-    
-    payload = {
-        "message": message,
-        "thread_id": gate["trace_id"], # ステート保持のキーとして使用
-        "metadata": {
-            "user_access_token": gate["access_token"] # MCPツール等で使用
+    cfg = BACKENDS.get(backend_key)
+    if not cfg or cfg.get("type") != "langgraph":
+        raise HTTPException(status_code=400, detail="Invalid backend for resume")
+
+    # LangGraph側の /api/resume を叩く
+    # config.yml の url が .../api/chat なら、.../api/resume に変換
+    resume_url = cfg.get("url").replace("/chat", "/resume")
+
+    async with httpx.AsyncClient() as client:
+        payload = {
+            "thread_id": trace_id, # BFFのtrace_id = LangGraphのthread_id
+            "action": action
         }
-    }
+        headers = {
+            "Authorization": f"Bearer {cfg.get('internal_key')}",
+            "traceparent": gate["traceparent"]
+        }
+        
+        response = await client.post(resume_url, json=payload, headers=headers)
+        return response.json()
 
-    headers = {
-        "traceparent": gate["traceparent"], # トレースの伝搬
-        "Authorization": "Bearer internal-s2s-key"
-    }
-
-    # LangGraph API実行...
-    # return response
+if __name__ == "__main__":
+    import uvicorn
+    import argparse
+    # -p, --port オプションを追加
+    parser = argparse.ArgumentParser(description="Run the AI-Agent Configurable BFF")
+    parser.add_argument("-p", "--port", type=int, default=5401, help="Port to run the API server on")
+    args = parser.parse_args()
+    uvicorn.run(app, host="0.0.0.0", port=args.port)

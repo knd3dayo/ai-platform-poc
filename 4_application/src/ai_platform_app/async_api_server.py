@@ -7,12 +7,12 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import MessagesState
 
 # 先ほど完成したクラスをインポート（パスは環境に合わせて適宜修正してください）
-from ai_platform_app.test_langgraph_hitl import TestLangGraphHITL
+from ai_platform_app.test_langgraph_hitl import LangGraphWorkflowTest1
 
 app = FastAPI(title="Async Agent Webhook API")
 
 # グローバルなエージェントインスタンスの作成
-chat_poc = TestLangGraphHITL()
+chat_poc = LangGraphWorkflowTest1()
 app_graph = chat_poc.create_app()
 
 # ==========================================

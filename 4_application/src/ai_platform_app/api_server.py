@@ -3,19 +3,43 @@ from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 
-from ai_platform_app.test_langgraph_hitl import TestLangGraphHITL
+from ai_platform_app.test_langgraph_hitl import LangGraphWorkflowTest1
 # Pylance対策として MessagesState もインポートしておきます
 from langgraph.graph import MessagesState 
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from contextlib import asynccontextmanager
 
 # ==========================================
 # FastAPI アプリケーションの実装
 # ==========================================
-app = FastAPI(title="LangGraph HITL API for Dify")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- [Startup] アプリ起動時の処理 ---
+    # 非同期チェックポインターを初期化
+    # ※ aiosqlite を使うため、AsyncSqliteSaver を使用
+    checkpointer = AsyncSqliteSaver.from_conn_string("langgraph_state.db")
+    
+    # 接続を開始 (context managerとして入る)
+    async with checkpointer as saver:
+        # グラフをコンパイル
+        app_graph = chat_poc.create_graph().compile(
+            checkpointer=saver,
+            interrupt_before=["tools"]
+        )
+        # コンパイルしたグラフを app.state に保存（リクエスト間で共有可能）
+        app.state.app_graph = app_graph
+        
+        print("🚀 LangGraph App with Async Checkpointer is ready")
+        yield  # ここでアプリが稼働する
+        
+    # --- [Shutdown] アプリ終了時の処理 ---
+    print("🛑 Shutting down...")
+
+app = FastAPI(title="AI-Agent Async API", lifespan=lifespan)
 
 # 【重要】リクエストごとに状態が初期化されないよう、
 # クラスのインスタンス化とグラフのコンパイルは関数の外側（グローバル）で1度だけ行います。
-chat_poc = TestLangGraphHITL()
-app_graph = chat_poc.create_app()
+chat_poc = LangGraphWorkflowTest1()
 
 class ChatRequest(BaseModel):
     thread_id: str
@@ -33,11 +57,11 @@ async def chat_endpoint(req: ChatRequest):
     initial_input: MessagesState = {"messages": [HumanMessage(content=req.message)]}
     
     # グラフの実行（interrupt_beforeに引っかかると自動停止）
-    for event in app_graph.stream(initial_input, config=config, stream_mode="values"):
+    async for event in app.state.app_graph.astream(initial_input, config=config, stream_mode="values"):
         pass 
 
     # 停止した時点の状態を確認
-    snapshot = app_graph.get_state(config)
+    snapshot = await app.state.app_graph.aget_state(config)
     
     # 次のノードが 'tools'（承認待ち）かどうかでレスポンスを変える
     if snapshot.next and snapshot.next[0] == "tools":
@@ -57,27 +81,43 @@ async def chat_endpoint(req: ChatRequest):
 
 @app.post("/api/resume")
 async def resume_endpoint(req: ResumeRequest):
-    """Difyでユーザーが承認した後に呼び出されるエンドポイント"""
+    """
+    Dify/BFFから承認・却下を受けて、中断されたLangGraphを再開する
+    """
     config: RunnableConfig = {"configurable": {"thread_id": req.thread_id}}
     
-    # グローバルな app_graph から状態を取得
-    snapshot = app_graph.get_state(config)
-    
-    if not snapshot.next or snapshot.next[0] != "tools":
-        raise HTTPException(status_code=400, detail="承認待ちのタスクがありません。")
+    # 状態の確認（念のため）
+    state = await app.state.app_graph.aget_state(config)
+    if not state.next:
+        return {"status": "error", "message": "再開可能な待機状態ではありません。"}
+
+    final_message = ""
 
     if req.action == "approve":
-        # 入力を None にして処理（ツール実行）を再開
-        for event in app_graph.stream(None, config=config, stream_mode="values"):
-            pass
-            
-    # 再開〜完了後の最終状態を取得
-    snapshot = app_graph.get_state(config)
-    return {
-        "status": "completed",
-        "message": snapshot.values["messages"][-1].content
-    }
+        # --- 承認時の処理 ---
+        # None を渡すことで、中断ポイント（ツール実行直前）から再開
+        # stream_mode="values" で最新のメッセージリストを追跡
+        async for event in app.state.app_graph.astream(None, config=config, stream_mode="values"):
+            if "messages" in event and len(event["messages"]) > 0:
+                # 常に最新（最後）のメッセージを取得
+                last_msg = event["messages"][-1]
+                # AIによる最終回答テキストを取得
+                final_message = last_msg.content
 
+        return {
+            "status": "success",
+            "message": final_message or "処理が完了しました。"
+        }
+
+    else:
+        # --- 却下時の処理 ---
+        # 却下された場合は、グラフを強制的に終了状態へ持っていくか、
+        # 却下された旨を履歴に追加するロジックをここに書く
+        return {
+            "status": "cancelled",
+            "message": "ユーザーによって承認が却下されたため、処理を中断しました。"
+        }
+            
 if __name__ == "__main__":
     import uvicorn
     import argparse
