@@ -1,5 +1,6 @@
 1_langfuse
 3_dify
+langgraph_state.*
 
 work/
 .env

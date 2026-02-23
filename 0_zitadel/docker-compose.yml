@@ -13,7 +13,7 @@ services:
 
       # Database connection settings.
       ZITADEL_DATABASE_POSTGRES_HOST: db
-      ZITADEL_DATABASE_POSTGRES_PORT: 5432
+      ZITADEL_DATABASE_POSTGRES_PORT: 15432
       # The database is created by the init job if it does not exist.
       ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
       # The admin user must already exist in the database.
@@ -127,7 +127,7 @@ services:
       - zitadel
       - ai_platform_net
     ports:
-      - 5432:5432
+      - 15432:15432
     volumes:
       - 'data:/var/lib/postgresql/data:rw'
 

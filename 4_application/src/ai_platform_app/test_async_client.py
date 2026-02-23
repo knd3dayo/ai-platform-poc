@@ -38,7 +38,9 @@ def start_webhook_server():
 # ==========================================
 def run_async_test():
     API_URL = "http://localhost:5202/api"
-    WEBHOOK_URL = f"http://localhost:{webhook_port}/webhook"
+    # WEBHOOK_URL = f"http://localhost:{webhook_port}/webhook"
+    # docker コンテナ内からはホストのIPを `host.docker.internal` で参照する
+    WEBHOOK_URL = f"http://host.docker.internal:{webhook_port}/webhook"
     thread_id = f"async-sim-{uuid.uuid4()}"
 
     print("==================================================")
