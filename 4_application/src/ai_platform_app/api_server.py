@@ -51,7 +51,7 @@ class ResumeRequest(BaseModel):
 
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
-    """Difyから最初のユーザー入力を受け取るエンドポイント"""
+    """最初のユーザー入力を受け取るエンドポイント"""
     # Pylance対策の型ヒントを復活させています
     config: RunnableConfig = {"configurable": {"thread_id": req.thread_id}}
     initial_input: MessagesState = {"messages": [HumanMessage(content=req.message)]}
