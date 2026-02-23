@@ -2,6 +2,7 @@
 3_dify
 langgraph_state.*
 
+node_modules/
 work/
 .env
 .env.*

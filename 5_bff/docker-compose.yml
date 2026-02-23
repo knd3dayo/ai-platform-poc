@@ -1,0 +1,32 @@
+services:
+  
+  bff_app:
+    # FastMCP(=MCPサーバー) を uv で起動する軽量コンテナ
+    image: ghcr.io/astral-sh/uv:python3.11-bookworm-slim
+    working_dir: /app
+    volumes:
+      # プロジェクト一式をマウント（pyproject.toml/uv.lock/src を利用）
+      - ./:/app
+      # 仮想環境は named volume に作ってホストを汚しにくくする
+      - bff_app_venv:/app/.venv
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LITELLM_LOG=DEBUG
+    ports:
+      - "5301:5301"
+    # 起動時に依存解決→MCPサーバー起動
+    command:
+      - /bin/sh
+      - -lc
+      - |
+          uv sync --frozen
+          uv run -m ai_platform_bff.api_server -p 5301
+
+networks:
+  default:
+    name: ai_platform_net
+    external: true
+
+
+volumes:
+  bff_app_venv:
