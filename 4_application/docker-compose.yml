@@ -1,0 +1,33 @@
+services:
+  
+  langgraph_app:
+    # FastMCP(=MCPサーバー) を uv で起動する軽量コンテナ
+    image: ghcr.io/astral-sh/uv:python3.11-bookworm-slim
+    working_dir: /app
+    volumes:
+      # プロジェクト一式をマウント（pyproject.toml/uv.lock/src を利用）
+      - ./:/app
+      # 仮想環境は named volume に作ってホストを汚しにくくする
+      - langgraph_app_venv:/app/.venv
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LITELLM_LOG=DEBUG
+    ports:
+      - "5201:5201"
+    # 起動時に依存解決→MCPサーバー起動
+    command:
+      - /bin/sh
+      - -lc
+      - |
+          uv sync --frozen
+          uv run -m ai_platform_app.api_server -p 5201
+
+
+networks:
+  default:
+    name: ai_platform_net
+    external: true
+
+
+volumes:
+  langgraph_app_venv:

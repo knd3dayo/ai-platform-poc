@@ -31,7 +31,7 @@ services:
       - PYTHONUNBUFFERED=1
       - LITELLM_LOG=DEBUG
     ports:
-      - "5001:5001"
+      - "5101:5101"
     # 起動時に依存解決→MCPサーバー起動
     command:
       - /bin/sh
