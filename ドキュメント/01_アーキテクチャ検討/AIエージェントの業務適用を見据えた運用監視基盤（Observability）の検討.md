@@ -110,6 +110,24 @@
 
 ---
 
+## 7.1 推奨構成（PoC）
+
+PoCでは「全コンポーネントを `trace_id` で串刺し検索できる」状態を最優先にします。
+
+* **トレーシング/ログ集約**：Langfuse
+  * PoCではLangfuseを“単一の可視化入口”にする（ユーザーから `trace_id` を受け取り即検索できる）
+* **Trace伝播**：OpenTelemetry（`traceparent`）
+  * BFFで `trace_id` を発行し、HTTPヘッダとEvent Busへ必ず伝播
+* **モデル/ツール呼び出しログ**：LiteLLM Proxy（callbacksでLangfuseへ送信）
+  * まずは「いつ/誰が/どのモデル/どのツールを使ったか」が追えることをゴールにする
+* **アラート**：最初は最小限
+  * DLQ投入数、ジョブ失敗率、HITL滞留時間（一定以上）だけに絞る
+
+> 補足：PoC段階ではメトリクス基盤（Prometheus/Grafana等）を後回しにしてもよいですが、
+> `trace_id` の伝播と、Langfuseでの串刺し検索だけは先に固めると後工程が楽になります。
+
+---
+
 ## 8. アンチパターン
 
 * trace_id が各所で変わる/欠落する（追跡できない）
