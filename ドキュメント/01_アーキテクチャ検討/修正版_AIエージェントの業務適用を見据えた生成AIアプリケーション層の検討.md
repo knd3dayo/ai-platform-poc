@@ -20,7 +20,8 @@
 実装・運用の観点では、次のように **実現手段（OSS/基盤）を割り当てる** と整理しやすい。
 
 * **WF型の実装基盤**：Dify（Workflow/Chatflow、GUI、運用UI、Human Input 等）
-* **自律型・SV型の実装基盤**：LangGraph（StateGraph、ループ/合議、Checkpointer、interrupt 等）
+* **SV型の実装基盤**：LangGraph（StateGraph、ループ/合議、Checkpointer、interrupt 等）
+* **自律型の実装基板**: Claude Codeなどのコーディングエージェント(Dockerコンテナ 等)
 
 ## 2.1 設計の鉄則：予見性に基づくモデル選択
 
@@ -75,7 +76,7 @@ AIエージェントの一般的な用語として「スーパーバイザー」
 WF型のように手順が固定できず、タスク解決のための道筋が探索的になる領域に適用する。
 最小単位は「目標」と「利用可能なツール群」であり、AIが自身で計画と実行を繰り返す。
 
-> 実装例：LangChain/LangGraphにおけるReAct（Reason + Act）パターンや、Advanced Data Analysis（コード実行エージェント）など。
+> 実装例：LangChain/LangGraphにおけるReAct（Reason + Act）パターンや、Claude Codeなどのコーディングエージェントなど。
 
 **特徴と得意領域（探索的タスク）**
 
@@ -151,7 +152,7 @@ SV型や自律型において、複数のユニット（エージェント）を
 * **典型構成**: Agent A ↔ Agent B ↔ Agent C（共通Stateの共有）
 * **特徴**: 特定の固定司令塔（SV）を持たず、現在のStateを見て「次は誰が動くべきか」をエージェント間で自律的にハンドオフ（遷移）する。明確な手順が存在せず、試行錯誤が必要な探索的タスクに向く。
 
-#### 8.5 Claude Code / Codex（高度自律型プログラミングエージェント）等での自律型例
+#### 8.5 Claude Code / Codex / Gemini CLI / Cline CLI（高度自律型プログラミングエージェント）等での自律型例
 
 * **典型構成**: SV (目標設定/レビュー) → Coding Agent (自律思考・実行ループ) in Sandbox
 * **特徴**:
