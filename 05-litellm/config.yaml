@@ -8,10 +8,10 @@ litellm_settings:
   success_callbacks: ["langfuse"]
   failure_callbacks: ["langfuse"]
   # ↓↓↓ 【重要】ここでPythonファイルのインスタンス変数を指定します ↓↓↓
-  callbacks: ai_platform_litellm.custom_hooks.proxy_handler_instance
+  callbacks: ai_platform_litellm.hook.custom_hooks.proxy_handler_instance
 
 mcp_servers:
   my_hello_mcp:
-    url: "http://mcp-server:5101/mcp"   # FastMCPの Streamable HTTP のデフォルトパス
+    url: "http://mcp-server-test1:5101/mcp"   # FastMCPの Streamable HTTP のデフォルトパス
     type: "http"                        # LiteLLM側で Streamable HTTP を指定する値
     extra_headers: ["Authorization", "litellm-api-key", "test"]  # ここで指定したヘッダーは、LiteLLMからMCPサーバーに転送される

@@ -18,7 +18,7 @@ services:
     extra_hosts:
       - "localhost:host-gateway"
   
-  mcp-server:
+  mcp-server-test1:
     # FastMCP(=MCPサーバー) を uv で起動する軽量コンテナ
     image: ghcr.io/astral-sh/uv:python3.11-bookworm-slim
     working_dir: /app
@@ -38,8 +38,7 @@ services:
       - -lc
       - |
           uv sync --frozen
-          uv run -m ai_platform_litellm.mcp_server
-
+          uv run -m ai_platform_litellm.test_server.mcp_server
 
 networks:
   default:
