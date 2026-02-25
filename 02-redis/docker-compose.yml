@@ -1,0 +1,26 @@
+services:
+  redis:
+    # Redis JSON, Search, Streams等が含まれるイメージに変更
+    container_name: redis
+    image: redis/redis-stack-server:latest
+    restart: always
+    environment:
+      # パスワード設定
+      - REDIS_ARGS=--requirepass ${REDIS_AUTH:-myredissecret} --maxmemory 2gb --maxmemory-policy noeviction
+    ports:
+      - 6379:6379
+      # Redis Insight (GUI) を使いたい場合は 8001 を開放
+      - 8001:8001
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_AUTH:-myredissecret}", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+    volumes:
+      # ホスト側のパスを指定
+      - ../data/redis:/data
+
+networks:
+  default:
+    name: ai_platform_net
+    external: true

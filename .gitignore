@@ -1,5 +1,7 @@
-1_langfuse
-3_dify
+data/
+04-dify/data/
+04-dify/docker/
+
 langgraph_state.*
 
 node_modules/
