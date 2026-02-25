@@ -1,28 +1,31 @@
 # AIエージェントの業務適用を見据えた非同期連携基盤（Event Bus）の検討
 
----
-
 ## 1. 目的
 
-生成AIワークロード（WF/SV/自律）は、
+生成AIワークロード（WF/SV/自律型）は、
 
 * 実行時間が読めない（探索・合議・リトライで長時間化）
 * 人間がリアルタイムに応答できない（非同期HITL）
 * 外部イベント（PR、コメント、メール承認）で再開される
 
-という性質を持つため、同期HTTP連携だけでは **タイムアウト・再試行地獄**になりがちです。
-
-本書では、Dify/LangGraph/自律型エージェント/周辺システムを疎結合でつなぐために、
-中央に **Event Bus（メッセージブローカー）** を置く設計原則を整理します。
+という性質を持つため、同期HTTP連携だけでは **タイムアウト・再試行地獄** になりがちです。
+本書では、Dify / LangGraph / 自律型エージェント / 周辺システムを疎結合でつなぐために、中央に **Event Bus（メッセージブローカー）** を置く設計原則と、データ永続化の仕組みについて整理します。
 
 ---
 
-## 2. Event Busの位置づけ
+## 2. Event Bus と 状態管理DB の位置づけ（CQRSパターンの採用）
 
-* Event Busは **Application層の内部実装ではなく**、BFF/Application/（必要によりTool）から利用される **共有ミドルウェア**。
-* “どのコンポーネントがPublisher/Subscriberか” を明確にし、責務境界（同期/非同期）を固定する。
+非同期基盤は、「流れるメッセージ」と「保存される状態」の責務を完全に分離（CQRS）して設計します。
 
-関連：`ドキュメント/02_PoC検討/システム構成.md` の「非同期連携基盤（Event Bus）」
+### 2.1 Event Bus（土管 / パイプ）
+
+* **役割**: コンポーネント間で「状態が変化した」というイベントを非同期かつ確実に伝達する共有ミドルウェア（Redis Streams, Kafka 等）。
+* **性質**: データは時間順に流れ、処理完了やTTL（有効期限）によって揮発する。**過去の状態の検索には使用しない。**
+
+### 2.2 状態管理DB（バケツ / スナップショット）
+
+* **役割**: システム全体の「現在のジョブ状態（RUNNING, PAUSED_FOR_HITL 等）」を永続化し、UIからの検索要求に即座に応えるためのデータストア。
+* **技術選定（NoSQLの推奨）**: AIエージェントの入出力（Stateやフォーム定義）はスキーマが頻繁に変わる深いJSON階層となるため、RDBではなく **NoSQL（ドキュメント指向DB：MongoDB, DynamoDB等）** または **PostgreSQLのJSONB型** を採用する。
 
 ---
 
@@ -34,120 +37,120 @@
 * Applicationのワーカーがsubscribeして実行
 * 完了時に `JOB_COMPLETED` / `JOB_FAILED` をpublish
 
-### 3.2 HITL（Pause/Resume）
+### 3.2 非同期HITL（Pause/Resume）
 
-* `HITL_REQUIRED`（interrupt発生）をpublish
-* BFFがsubscribeしてフロントへ通知（SSE/WebSocket）
+* Application（エージェント）側で `HITL_REQUIRED` をpublish
+* BFFがsubscribeして状態管理DBを更新し、フロントへ通知
 * 人間入力を受けたBFFが `HITL_RESUMED` をpublish
 
 ### 3.3 自律型エージェント（PRレビュー駆動）
 
 * GitHub/GitLab WebhookをBFFが受け `PR_CREATED` / `PR_COMMENTED` をpublish
-* Applicationがsubscribeしてエージェントジョブ（コンテナ）を起動
+* Applicationがsubscribeしてエージェントジョブ（YOLOモードのコンテナ）を起動
 
 ---
 
-## 4. イベント設計（最低限の標準）
+## 4. API Gateway / BFF層との責務分界点（次期資料への連携）
 
-### 4.1 メッセージ共通属性
+非同期連携基盤（本資料の領域）と、前段のAPI Gateway / BFF層は、以下の明確な境界線とルールで連携します。（詳細は別紙『APIゲートウェイ/BFF層の検討』にて定義）
 
-* `trace_id`（W3C traceparent準拠）
+### 4.1 BFFの完全なステートレス性と状態管理DBの独占
+
+* **ステートレス原則**: BFFのサーバープロセス自身は、メモリ内にジョブの状態を一切保持してはならない（水平スケールと耐障害性のため）。
+* **書き込み主権**: **「状態管理DB」への読み書き（I/O）はBFF層が完全に独占する。** LangGraphワーカーやコンテナ内のエージェントが、直接状態管理DBを更新することはセキュリティと密結合回避の観点から固く禁ずる（エージェントはEvent Busへメッセージを投げるのみ）。
+
+### 4.2 トラフィックのルーティング（Fast Track / Slow Track）
+
+BFFはリクエストの性質に応じ、Event Busを経由させるか否かを判断する。
+
+* **Fast Track（Event Bus バイパス）**: 単純なLLMチャット等は、BFFから直接APIを叩きSSEで同期応答する。
+* **Slow Track（Event Bus 経由）**: エージェント実行やHITLを伴う処理は、BFFがHTTP 202（受付完了）を返し、処理をEvent Busへ非同期で委譲する。
+
+### 4.3 フロントエンドのセッション復帰（Session Recovery）フロー
+
+ブラウザ再起動時など、フロントエンドが現在の状態を復元する際、**Event Busの過去ログを検索しにいってはならない。**
+
+1. **初期取得**: フロントエンドはBFFの同期APIを呼び、BFFが状態管理DBから最新スナップショットを引いて返す。
+2. **再購読**: その後、フロントエンドはBFFとSSE/WebSocketコネクションを確立する。
+3. **通知**: BFFはEvent Busから流れてくる最新イベントを購読し、該当するコネクションへプッシュする（※BFF複数台構成時はRedis Pub/Sub等でのバックプレーン共有が必要）。
+
+---
+
+## 5. イベント設計（最低限の標準）
+
+### 5.1 メッセージ共通属性
+
+* `trace_id`（W3C traceparent準拠：エンドツーエンドの分散トレーシング用）
 * `event_type`
 * `occurred_at`（UTC推奨）
-* `producer`（どのコンポーネントが出したか）
+* `producer`（発行元コンポーネント）
 * `idempotency_key`（重複排除キー）
 
-### 4.2 ペイロード（例）
+### 5.2 ペイロード（例）
 
 ```json
 {
-  "trace_id": "00-...-...-01",
+  "trace_id": "00-4bf92f35...-01",
   "event_type": "HITL_REQUIRED",
-  "occurred_at": "2026-02-24T12:00:00Z",
+  "occurred_at": "2026-02-25T12:00:00Z",
   "producer": "application.langgraph",
-  "idempotency_key": "...",
+  "idempotency_key": "abc-123",
   "data": {
     "status": "PAUSED_FOR_HITL",
-    "thread_id": "...",
+    "thread_id": "thread-xyz",
     "human_task": {
       "type": "APPROVAL",
-      "summary": "顧客への送信文面の承認",
-      "inputs_schema": {"approve": "boolean", "comment": "string"}
+      "summary": "顧客への送信文面の承認"
     }
   }
 }
+
 ```
 
 ---
 
-## 5. 冪等性・重複配送・順序
+## 6. 冪等性・重複配送・順序
 
-Event Busは一般に **at-least-once** 配送（重複あり）を前提とします。
+Event Busは一般に **at-least-once** 配送（重複あり）を前提とする。
 
-* **冪等性**：Subscriberは `idempotency_key` / `trace_id + event_type + version` 等で重複排除
-* **順序保証の要否**：
-  * `trace_id` 単位で順序が必要なイベントは、同一パーティション/同一キューへ
-  * 必要ないものは並列化してスループット優先
+* **冪等性**：Subscriber（BFFやワーカー）は `idempotency_key` / `trace_id + event_type` 等でDB書き込み時の重複排除を行う。
+* **順序保証の要否**：`trace_id` 単位で順序が必要なイベントは同一パーティションへ、不要なものは並列化してスループットを優先。
 
 ---
 
-## 6. リトライ・DLQ（必須）
+## 7. リトライ・DLQ（必須）
 
-* **リトライ戦略**：指数バックオフ + ジッタ + 最大試行回数
-* **DLQ**：一定回数失敗したメッセージはDLQへ隔離し、消失させない
-* **DLQ運用**：
-  * `trace_id` で原因を追えること
-  * DLQを起点に再実行（replay）できること
+* **リトライ戦略**：指数バックオフ + ジッタ + 最大試行回数。
+* **DLQ（Dead Letter Queue）**：一定回数失敗したメッセージはDLQへ隔離し消失を防ぐ。`trace_id` でAPMから原因追及でき、再実行可能な運用フローを構築する。
 
 ---
 
-## 7. セキュリティ（最低限）
+## 8. セキュリティ（最低限）
 
-* **メッセージの改ざん防止**：署名 or mTLS（環境に応じて）
-* **PIIを載せない**：イベントには参照キー（artifact_id等）を載せ、本文は別ストアへ
-* **テナント境界**：マルチテナントの場合はトピック/namespace分離
-
----
-
-## 8. PoC→初期本番の意思決定ポイント
-
-* **採用技術**：Redis Streams / RabbitMQ / NATS / Kafka / Azure Service Bus など
-  * PoC：運用が軽いもの（例：Redis Streams）
-  * 初期本番：DLQ・監視・権限分離を含めて選定
-* **イベントの粒度**：
-  * 大粒度（Job/HITL/完了）から開始し、必要に応じて細分化
+* **改ざん防止**：署名 or mTLS。
+* **PII（個人情報）の排除**：イベントメッセージには参照キー（`document_id` 等）のみを載せ、巨大な本文や機密情報は別ストア（S3やDB）へ保存する。
 
 ---
 
-## 8.1 推奨構成（PoC）
+## 9. PoC→初期本番の意思決定ポイント
 
-PoCでは「運用を回せる最小構成」を優先し、**Redis Streams をEvent Busとして採用**するのが現実的です。
-
-* **Event Bus**：Redis Streams
-  * 理由：docker-composeで立てやすく、ワーカー/購読の概念がシンプル（XADD/XREADGROUP）
-* **イベント正規化（入口）**：BFF
-  * 外部Webhook（Dify/GitHub/GitLab）を受け、`trace_id` を付与してStreamsへXADD
-* **ワーカー**：Application（LangGraphワーカー）
-  * Consumer Groupで購読し、処理結果を `JOB_COMPLETED` 等でpublish
-* **通知**：BFFがStreamsを購読し、フロントへSSE/WebSocket（PoCはSSE推奨）
-* **DLQ（PoC簡易版）**：
-  * PoCでは「別Stream（例：`dlq:*`）」へ退避して人手でリプレイ
-  * 初期本番では、DLQの可視化と再実行手順を運用手順として固定
-
-> 重要：PoCでも **trace_id と idempotency_key を必須**にすると、後からKafka等へ移行しても設計が崩れません。
+PoCでは運用を回せる最小構成として **Redis Streams** をEvent Busに採用し、状態管理DBにはドキュメント指向DB（またはJSONカラム）を組み合わせる。
+（※PoC段階であっても `trace_id` と `idempotency_key` の実装は必須とし、将来的なKafka等への移行に備える）
 
 ---
 
-## 9. アンチパターン
+## 10. アンチパターン（NG集）
 
-* 同期API連携のみで長時間処理を待つ（タイムアウト）
-* `trace_id` を載せない（観測不能）
-* DLQがない（メッセージ消失で原因不明）
-* PIIや巨大な本文をイベントに載せる（漏洩・肥大化）
+* ❌ **フロントエンドからの直接API呼び出し**（BFFをバイパスするセキュリティ違反）
+* ❌ **イベントソーシングによる状態復元**（Event Busを検索用途に使い、パフォーマンスが崩壊する）
+* ❌ **エージェントからの直接DB更新**（状態管理DBの書き込み主権をBFFから奪い、密結合になる）
+* ❌ **BFFプロセスのインメモリ状態保持**（スケールアウトが不可能になる）
+* ❌ **`trace_id` の欠落**（非同期システムのオブザーバビリティが喪失する）
+* ❌ **DLQの未実装**（メッセージ消失時に原因究明が不可能になる）
 
 ---
 
-## 10. 関連ドキュメント
+## 11. 関連ドキュメント
 
 * 集大成：[`AIエージェントの業務適用を見据えた生成AIアーキテクチャ検討.md`](./AIエージェントの業務適用を見据えた生成AIアーキテクチャ検討.md)
 * BFF層：[`AIエージェントの業務適用を見据えたAPIゲートウェイBFF層の検討.md`](./AIエージェントの業務適用を見据えたAPIゲートウェイBFF層の検討.md)
