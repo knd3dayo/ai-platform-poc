@@ -14,7 +14,7 @@ services:
       - CLINE_API_PROVIDER=${CLINE_API_PROVIDER}
       - CLINE_API_KEY=${CLINE_API_KEY}
       - CLINE_API_BASE_URL=${CLINE_API_BASE_URL}
-      - CLINE_MODEL_ID=${CLINE_MODEL_ID}
+        - CLINE_MODEL_ID=${CLINE_MODEL_ID}
 
 networks:
   default:
