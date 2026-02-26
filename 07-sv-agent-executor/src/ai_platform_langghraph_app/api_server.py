@@ -53,6 +53,37 @@ def _append_server_log(job: Job, line: str, max_lines: int = 200) -> None:
 jobs: Dict[str, Job] = {}
 
 
+def _get_cancel_flag(job: Job) -> bool:
+    return bool(job.progress.get("cancel_requested"))
+
+
+def _set_cancel_flag(job: Job) -> None:
+    job.progress["cancel_requested"] = True
+    job.progress["cancel_requested_at"] = time.time()
+
+
+def _try_cancel_executor_task(job: Job) -> None:
+    """tool 結果に task_id が入っていれば Cline Executor へ cancel を投げる（ベストエフォート）。"""
+    last_tool = job.progress.get("last_tool")
+    if not isinstance(last_tool, dict):
+        return
+    task_id = last_tool.get("task_id")
+    if not task_id:
+        return
+
+    base_url = job.progress.get("executor_base_url")
+    if not isinstance(base_url, str) or not base_url:
+        return
+
+    try:
+        import requests
+
+        requests.delete(f"{base_url.rstrip('/')}/cancel/{task_id}", timeout=10)
+        _append_server_log(job, f"Sent cancel to executor task_id={task_id}")
+    except Exception as e:
+        _append_server_log(job, f"Failed to cancel executor task: {e}")
+
+
 # =====================================================
 # Background worker
 # =====================================================
@@ -129,6 +160,8 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
                 _append_server_log(job, "LangGraph stream started")
                 _append_server_log(job, f"llm_base_url={llm_base_url}")
                 _append_server_log(job, f"executor_base_url={executor_base_url}")
+                job.progress["llm_base_url"] = llm_base_url
+                job.progress["executor_base_url"] = executor_base_url
 
         for event in graph.stream(state, stream_mode="values"):
             # event は state(values) の dict を想定
@@ -143,6 +176,10 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
             with jobs_lock:
                 job = jobs.get(thread_id)
                 if job:
+                    if _get_cancel_flag(job):
+                        _append_server_log(job, "Cancel requested. Stopping stream loop.")
+                        job.status = "cancelled"
+                        break
                     job.progress["latest_message"] = latest_content
 
                     tool_payloads = _extract_tool_payloads_from_messages(messages)
@@ -156,14 +193,21 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
                         if "stderr" in last_tool:
                             job.progress["stderr"] = last_tool.get("stderr")
 
+                        # cancel が要求されていたら executor 側にも kill を試みる
+                        if _get_cancel_flag(job):
+                            _try_cancel_executor_task(job)
+
         # 最終 state を取得（stream で最後に来た event を使っても良いが、ここでは progress を採用）
         with jobs_lock:
             job = jobs.get(thread_id)
             if job:
-                _append_server_log(job, "LangGraph stream finished")
+                if _get_cancel_flag(job):
+                    _append_server_log(job, "LangGraph stream finished (cancelled)")
+                else:
+                    _append_server_log(job, "LangGraph stream finished")
             jobs[thread_id] = Job(
                 thread_id=thread_id,
-                status="completed",
+                status="cancelled" if (job and _get_cancel_flag(job)) else "completed",
                 progress=job.progress if job else {"latest_message": None},
                 result={
                     "thread_id": thread_id,
@@ -251,6 +295,28 @@ async def status(thread_id: str):
         "result": job.result,
         "error": job.error,
     }
+
+
+@app.delete("/api/cancel/{thread_id}")
+async def cancel(thread_id: str):
+    """ジョブのキャンセル要求を受け付ける。
+
+    NOTE:
+        - LangGraph 実行を強制停止する仕組みは限定的なため、ここでは cancel フラグを立てて
+          stream ループを break する（ベストエフォート）。
+        - すでに tool が Cline Executor のタスクを起動済みで task_id が取れる場合は、
+          Executor 側 `/cancel/{task_id}` にもキャンセルを投げる。
+    """
+    with jobs_lock:
+        job = jobs.get(thread_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="thread_id not found")
+
+        _set_cancel_flag(job)
+        _append_server_log(job, "Cancel requested via API")
+        _try_cancel_executor_task(job)
+
+    return {"thread_id": thread_id, "status": "cancel_requested"}
 
 
 if __name__ == "__main__":

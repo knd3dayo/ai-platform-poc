@@ -1,5 +1,4 @@
 import os
-import asyncio
 import time
 import io
 import zipfile
@@ -164,23 +163,36 @@ def _zip_dir_to_bytes(dir_path: str) -> bytes:
     return buf.getvalue()
 
 
+def _error_result(message: str, *, task_id: Optional[str] = None) -> Dict[str, Any]:
+    res: Dict[str, Any] = {
+        "status": "failed",
+        "stdout": "",
+        "stderr": message,
+        "artifacts": [],
+    }
+    if task_id is not None:
+        res["task_id"] = task_id
+    return res
+
+
 @tool
-async def run_cline_executor(
+def run_cline_executor(
     prompt: str,
     initial_files: Optional[Dict[str, str]] = None,
     timeout: int = 300,
 ) -> Dict[str, Any]:
-    """Executor Service(コーディングエージェント実行API) を呼び出して結果を返す。
+    """Executor Service(コーディングエージェント実行API) を呼び出して結果を返す（同期ツール）。
 
     呼び出し:
     1) POST /execute で task_id を取得
     2) GET /status/{task_id} を完了までポーリング
     3) completed/failed/timeout 等の最終結果を返す
 
-    並列実行に耐えるよう、HTTP呼び出しは asyncio.to_thread() でスレッド実行する。
+    NOTE:
+        LangGraph の ToolNode は同期実行パスを通ることがあるため、このツールは同期関数にしている。
     """
 
-    def _run() -> Dict[str, Any]:
+    try:
         base_url = _get_executor_base_url().rstrip("/")
         payload: Dict[str, Any] = {"prompt": prompt, "timeout": timeout}
         if initial_files:
@@ -189,16 +201,28 @@ async def run_cline_executor(
         res = requests.post(f"{base_url}/execute", json=payload, timeout=30)
         res.raise_for_status()
         task_id = res.json()["task_id"]
-        final_status = _poll_status(task_id, timeout_sec=timeout + 30)
+
+        try:
+            final_status = _poll_status(task_id, timeout_sec=timeout + 30)
+        except Exception as e:
+            return _error_result(f"Failed to poll status: {e}", task_id=task_id)
 
         # 完了後に成果物ZIPを取得して返す。
         # NOTE: base64 でクライアントへ返すのは PoC 用の便法。
         #       ファイルサイズが大きいとレスポンス肥大・メモリ圧迫・転送コスト増となり不向き。
         #       将来的にはシステム全体で成果物置き場（S3/Box等）を構築し、URL参照（署名付きURL等）で
         #       受け渡す方式を検討する。
-        zip_bytes = _download_artifacts_zip_bytes(task_id)
-        zip_b64 = base64.b64encode(zip_bytes).decode("ascii")
-        file_list, text_previews = _inspect_zip_bytes(zip_bytes)
+        try:
+            zip_bytes = _download_artifacts_zip_bytes(task_id)
+            zip_b64 = base64.b64encode(zip_bytes).decode("ascii")
+            file_list, text_previews = _inspect_zip_bytes(zip_bytes)
+        except Exception as e:
+            # 成果物取得に失敗しても、実行結果自体は返す
+            return {
+                "task_id": task_id,
+                **final_status,
+                "artifacts_zip_error": str(e),
+            }
 
         return {
             "task_id": task_id,
@@ -208,18 +232,18 @@ async def run_cline_executor(
             "artifacts_zip_file_list": file_list,
             "artifacts_zip_text_previews": text_previews,
         }
-
-    return await asyncio.to_thread(_run)
+    except Exception as e:
+        return _error_result(f"run_cline_executor failed: {e}")
 
 
 @tool
-async def run_cline_executor_zip(
+def run_cline_executor_zip(
     prompt: str,
     dir_path: Optional[str] = None,
     zip_path: Optional[str] = None,
     timeout: int = 600,
 ) -> Dict[str, Any]:
-    """Executor Service の /execute/zip を使い、関連ファイル一式をアップロードして実行する。
+    """Executor Service の /execute/zip を使い、関連ファイル一式をアップロードして実行する（同期ツール）。
 
     `dir_path` または `zip_path` のどちらか一方を指定する。
 
@@ -232,7 +256,7 @@ async def run_cline_executor_zip(
     if (dir_path is None and zip_path is None) or (dir_path is not None and zip_path is not None):
         raise ValueError("Specify exactly one of dir_path or zip_path")
 
-    def _run() -> Dict[str, Any]:
+    try:
         base_url = _get_executor_base_url().rstrip("/")
 
         if dir_path is not None:
@@ -250,11 +274,22 @@ async def run_cline_executor_zip(
             res = requests.post(f"{base_url}/execute/zip", data=data, files=files, timeout=60)
             res.raise_for_status()
             task_id = res.json()["task_id"]
-            final_status = _poll_status(task_id, timeout_sec=timeout + 30)
 
-            zip_bytes = _download_artifacts_zip_bytes(task_id)
-            zip_b64 = base64.b64encode(zip_bytes).decode("ascii")
-            file_list, text_previews = _inspect_zip_bytes(zip_bytes)
+            try:
+                final_status = _poll_status(task_id, timeout_sec=timeout + 30)
+            except Exception as e:
+                return _error_result(f"Failed to poll status: {e}", task_id=task_id)
+
+            try:
+                zip_bytes = _download_artifacts_zip_bytes(task_id)
+                zip_b64 = base64.b64encode(zip_bytes).decode("ascii")
+                file_list, text_previews = _inspect_zip_bytes(zip_bytes)
+            except Exception as e:
+                return {
+                    "task_id": task_id,
+                    **final_status,
+                    "artifacts_zip_error": str(e),
+                }
 
             return {
                 "task_id": task_id,
@@ -271,8 +306,8 @@ async def run_cline_executor_zip(
                     file_tuple[1].close()  # type: ignore[union-attr]
                 except Exception:
                     pass
-
-    return await asyncio.to_thread(_run)
+    except Exception as e:
+        return _error_result(f"run_cline_executor_zip failed: {e}")
 
 
 tools = [run_cline_executor, run_cline_executor_zip]

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import signal
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -66,6 +67,15 @@ def get_status(api_url: str, thread_id: str) -> Dict[str, Any]:
     return res.json()
 
 
+def cancel_job(api_url: str, thread_id: str) -> None:
+    api_url = api_url.rstrip("/")
+    try:
+        requests.delete(f"{api_url}/api/cancel/{thread_id}", timeout=10)
+    except Exception:
+        # キャンセル通知に失敗しても、クライアント終了を優先
+        pass
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="SV Agent Executor API test client")
     parser.add_argument("--api-url", default="http://localhost:5202", help="SV Agent Executor API base url")
@@ -79,6 +89,21 @@ def main() -> None:
 
     thread_id = submit_job(args.api_url, args.message, args.zip_path)
     print(f"submitted thread_id={thread_id}")
+
+    # Ctrl+C を受けたら cancel を送って終了する
+    cancel_requested = False
+
+    def _handle_sigint(_sig, _frame):
+        nonlocal cancel_requested
+        if cancel_requested:
+            raise KeyboardInterrupt
+        cancel_requested = True
+        print("\nCtrl+C detected. Sending cancel request...")
+        cancel_job(args.api_url, thread_id)
+        print("cancel request sent. exiting...")
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGINT, _handle_sigint)
 
     deadline = time.time() + args.max_wait_sec
     last_logs_len = 0
