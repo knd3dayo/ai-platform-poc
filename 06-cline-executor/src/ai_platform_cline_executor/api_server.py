@@ -1,23 +1,27 @@
 import os
 import uuid
 import pathlib
+import tempfile
 import docker
 import asyncio
 import zipfile
 import io
 from fastapi import UploadFile, File, Form
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 from typing import Dict, Optional, List
 from datetime import datetime
 from dotenv import load_dotenv
+
+load_dotenv()
 
 # --- 設定：環境に合わせて調整 ---
 HOST_PROJECTS_ROOT = os.getenv("HOST_PROJECTS_ROOT", "/home/user/ai-platform/data/projects")
 CLINE_IMAGE = "cline-executor-image"
 NETWORK_NAME = "ai_platform_net"
 
-load_dotenv()
 app = FastAPI(title="Cline Executor Service")
 client = docker.from_env()
 
@@ -51,6 +55,13 @@ async def monitor_container(task_id: str, container, task_dir: pathlib.Path, tim
                 break
             if (asyncio.get_event_loop().time() - start_time) > timeout:
                 container.kill()
+                # timeout 時点のログを可能なら保存
+                try:
+                    out_logs = container.logs(stdout=True, stderr=False).decode("utf-8")
+                    err_logs = container.logs(stdout=False, stderr=True).decode("utf-8")
+                    tasks[task_id].update({"stdout": out_logs, "stderr": err_logs})
+                except Exception:
+                    pass
                 tasks[task_id].update({"status": "timeout"})
                 return
             await asyncio.sleep(1)
@@ -81,6 +92,35 @@ async def monitor_container(task_id: str, container, task_dir: pathlib.Path, tim
             container.remove(force=True)
         except:
             pass
+
+
+def _make_zip_from_dir(src_dir: pathlib.Path, zip_path: pathlib.Path) -> None:
+    """ディレクトリ全体をzip化します（zip_path は上書き）。"""
+    if not src_dir.exists() or not src_dir.is_dir():
+        raise FileNotFoundError(f"Directory not found: {src_dir}")
+
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for p in src_dir.rglob("*"):
+            if not p.is_file():
+                continue
+            # zip 内のパスは src_dir からの相対
+            zf.write(p, arcname=str(p.relative_to(src_dir)))
+
+
+def _cleanup_file(path: str) -> None:
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+
+
+def _get_container_logs(container, tail: int = 200) -> tuple[str, str]:
+    """docker コンテナの stdout/stderr を取得して (stdout, stderr) を返します。"""
+    # docker SDK の tail は str/int を受け付ける
+    out = container.logs(stdout=True, stderr=False, tail=tail)
+    err = container.logs(stdout=False, stderr=True, tail=tail)
+    return out.decode("utf-8", errors="replace"), err.decode("utf-8", errors="replace")
 
 # --- API エンドポイント ---
 
@@ -121,7 +161,8 @@ async def execute_cline(request: ClineRequest, background_tasks: BackgroundTasks
         tasks[task_id] = {
             "task_id": task_id,
             "status": "running",
-            "created_at": datetime.now()
+            "created_at": datetime.now(),
+            "container_id": container.id,
         }
 
         # バックグラウンドで監視開始
@@ -178,7 +219,8 @@ async def execute_cline_zip(
             "task_id": task_id,
             "status": "running",
             "created_at": datetime.now(),
-            "artifacts": []
+            "artifacts": [],
+            "container_id": container.id,
         }
 
         background_tasks.add_task(monitor_container, task_id, container, task_dir, timeout)
@@ -192,10 +234,57 @@ async def execute_cline_zip(
     
 
 @app.get("/status/{task_id}", response_model=TaskStatus)
-async def get_status(task_id: str):
+async def get_status(task_id: str, tail: int = 200):
     if task_id not in tasks:
         raise HTTPException(status_code=404, detail="Task not found")
-    return tasks[task_id]
+
+    task = tasks[task_id]
+    # running のときだけ、コンテナからログを都度取得してレスポンスへ反映
+    if task.get("status") == "running":
+        container_id = task.get("container_id")
+        if container_id:
+            try:
+                container = client.containers.get(container_id)
+                stdout, stderr = _get_container_logs(container, tail=tail)
+                # tasks を汚染せずレスポンスだけに乗せる
+                return {**task, "stdout": stdout, "stderr": stderr}
+            except Exception as e:
+                # ログ取得に失敗しても status 自体は返す
+                return {**task, "stderr": f"Failed to fetch running logs: {e}"}
+
+    return task
+
+
+@app.get("/artifacts/{task_id}/zip")
+async def download_artifacts_zip(task_id: str):
+    """タスクの作業用ディレクトリをZIP化して返します。"""
+    task_dir = pathlib.Path(HOST_PROJECTS_ROOT) / task_id
+    if not task_dir.exists() or not task_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Artifacts directory not found")
+
+    # 実行中は結果が不安定になり得るので、原則 completed のみ許可
+    task = tasks.get(task_id)
+    if task and task.get("status") not in ("completed", "failed"):
+        raise HTTPException(status_code=409, detail=f"Task is {task.get('status')}")
+
+    # 一時ファイルへZIPを作成し、FileResponseで返す（レスポンス完了後に削除）
+    tmp = tempfile.NamedTemporaryFile(prefix=f"{task_id}-", suffix=".zip", delete=False)
+    tmp_path = pathlib.Path(tmp.name)
+    tmp.close()
+
+    try:
+        _make_zip_from_dir(task_dir, tmp_path)
+    except Exception:
+        _cleanup_file(str(tmp_path))
+        raise
+
+    filename = f"{task_id}.zip"
+    return FileResponse(
+        path=str(tmp_path),
+        media_type="application/zip",
+        filename=filename,
+        background=BackgroundTask(_cleanup_file, str(tmp_path)),
+    )
 
 @app.delete("/cancel/{task_id}")
 async def cancel_task(task_id: str):
@@ -206,7 +295,19 @@ async def cancel_task(task_id: str):
     
     if task["status"] == "running":
         try:
-            container = client.containers.get(task["container_id"])
+            container_id = task.get("container_id")
+            if not container_id:
+                return {"message": "container_id not found for this task"}
+
+            container = client.containers.get(container_id)
+            # kill 前に直近ログを取得しておく（取得不可でも握りつぶす）
+            try:
+                stdout, stderr = _get_container_logs(container, tail=200)
+                task["stdout"] = stdout
+                task["stderr"] = stderr
+            except Exception:
+                pass
+
             container.kill()
             task["status"] = "cancelled"
             return {"message": f"Task {task_id} has been cancelled."}

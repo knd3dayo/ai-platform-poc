@@ -1,167 +1,262 @@
-from fastapi import FastAPI, BackgroundTasks, HTTPException
-from pydantic import BaseModel
-from typing import Optional, Dict, Any
-import requests
+import json
+import base64
+import os
+import threading
+import time
+import traceback
+from pathlib import Path
+from collections import deque
+import tempfile
+import uuid
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, List, Deque
+
+from fastapi import FastAPI, BackgroundTasks, HTTPException, UploadFile, File, Form
+
 from langchain_core.messages import HumanMessage
-from langchain_core.runnables import RunnableConfig
-from langgraph.graph import MessagesState
 
-# 先ほど完成したクラスをインポート（パスは環境に合わせて適宜修正してください）
-from ai_platform_langgraph_app.test_langgraph_hitl import LangGraphWorkflowTest1
+from ai_platform_langghraph_app.parallel_agent_workflow import ParallelAgentWorkflow
 
-app = FastAPI(title="Async Agent Webhook API")
 
-# グローバルなエージェントインスタンスの作成
-chat_poc = LangGraphWorkflowTest1()
-app_graph = chat_poc.create_app()
+app = FastAPI(title="SV Agent Executor API")
 
-# ==========================================
-# データモデル
-# ==========================================
-class AsyncChatRequest(BaseModel):
+
+# =====================================================
+# In-memory job store (PoC)
+# =====================================================
+# NOTE:
+#   本番用途では Redis / DB など永続ストアに移すこと。
+
+
+@dataclass
+class Job:
     thread_id: str
-    message: str
-    webhook_url: str
-    event_type: str = "agent_task_completed"
-    metadata: Dict[str, Any] = {}
-
-class AsyncResumeRequest(BaseModel):
-    thread_id: str
-    action: str  # "approve" など
-    webhook_url: str
-    event_type: str = "agent_resume_completed"
-    metadata: Dict[str, Any] = {}
-
-# ==========================================
-# バックグラウンド処理ワーカー
-# ==========================================
-def background_agent_task(
-    thread_id: str, 
-    initial_input: Optional[MessagesState], 
-    webhook_url: str, 
-    event_type: str, 
-    metadata: Dict[str, Any]
-):
-    """レスポンス返却後に裏側で実行される重い処理（チャット・再開共通）"""
-    print(f"\n[Background Worker] スレッド {thread_id} の処理を開始します... (Event: {event_type})")
-    
-    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
-
-    try:
-        # LangGraphの処理を実行（initial_inputがNoneの場合は中断箇所から再開）
-        for event in app_graph.stream(initial_input, config=config, stream_mode="values"):
-            pass 
-
-        # 最終状態の取得
-        snapshot = app_graph.get_state(config)
-        
-        # HITL（承認待ち）で止まった場合のハンドリング
-        if snapshot.next and snapshot.next[0] == "tools":
-            pending_action = snapshot.values["messages"][-1].tool_calls[0]
-            status = "requires_approval"
-            result_data = {
-                "message": "処理を実行する前に人間の承認が必要です。",
-                "tool_name": pending_action["name"],
-                "tool_args": pending_action["args"]
-            }
-        else:
-            status = "completed"
-            result_data = {
-                "message": snapshot.values["messages"][-1].content
-            }
-
-        # 統合Webhook向けの拡張Payload
-        payload = {
-            "event_type": event_type,
-            "thread_id": thread_id,
-            "status": status,
-            "result": result_data,
-            "metadata": metadata
-        }
-        
-        print(f"[Background Worker] 処理完了。Webhookを送信します -> {webhook_url}")
-        requests.post(webhook_url, json=payload, timeout=10)
-        
-    except Exception as e:
-        print(f"[Background Worker] ❌ エラー発生: {e}")
-        error_payload = {
-            "event_type": f"{event_type}_failed",
-            "thread_id": thread_id,
-            "status": "failed",
-            "error": str(e),
-            "metadata": metadata
-        }
-        requests.post(webhook_url, json=error_payload, timeout=10)
+    status: str  # queued, running, completed, failed
+    # status polling で返すための進捗情報（PoC）
+    progress: Dict[str, Any]
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
 
 
-# ==========================================
-# エンドポイント
-# ==========================================
-@app.post("/api/chat_async")
-async def chat_async_endpoint(req: AsyncChatRequest, background_tasks: BackgroundTasks):
-    """ユーザーに即時応答し、裏で処理を開始する"""
-    initial_input: MessagesState = {"messages": [HumanMessage(content=req.message)]}
-    
-    background_tasks.add_task(
-        background_agent_task,
-        req.thread_id,
-        initial_input,
-        req.webhook_url,
-        req.event_type,
-        req.metadata
-    )
+jobs_lock = threading.Lock()
 
-    return {
-        "status": "processing",
-        "thread_id": req.thread_id,
-        "message": "バックグラウンドで処理を開始しました。"
-    }
 
-@app.post("/api/resume_async")
-async def resume_async_endpoint(req: AsyncResumeRequest, background_tasks: BackgroundTasks):
-    """ユーザーが承認した後、裏で処理を再開する"""
-    config: RunnableConfig = {"configurable": {"thread_id": req.thread_id}}
-    snapshot = app_graph.get_state(config)
-    
-    if not snapshot.next or snapshot.next[0] != "tools":
-        raise HTTPException(status_code=400, detail="承認待ちのタスクがありません。")
+def _append_server_log(job: Job, line: str, max_lines: int = 200) -> None:
+    """サーバ側の進捗ログをリングバッファで保持する（/api/status で返す用）。"""
+    logs: Deque[str] = job.progress.setdefault("server_logs", deque(maxlen=max_lines))  # type: ignore[assignment]
+    # deque は json 化できないので、返却時に list 化する
+    if isinstance(logs, deque):
+        logs.append(line)
 
-    if req.action == "approve":
-        background_tasks.add_task(
-            background_agent_task,
-            req.thread_id,
-            None, # Noneを渡すことで中断箇所から再開
-            req.webhook_url,
-            req.event_type,
-            req.metadata
+
+jobs: Dict[str, Job] = {}
+
+
+# =====================================================
+# Background worker
+# =====================================================
+
+
+def _extract_tool_payloads_from_messages(messages: List[Any]) -> List[Dict[str, Any]]:
+    """LangGraph の state.messages から tool 実行結果っぽいものを抽出する（PoC）。
+
+    ToolNode の結果は ToolMessage として入ることが多い。
+    - msg.type == "tool" かつ msg.content が JSON 文字列の場合は dict にデコードする。
+    """
+    payloads: List[Dict[str, Any]] = []
+    for msg in messages:
+        msg_type = getattr(msg, "type", None)
+        if msg_type != "tool":
+            continue
+        content = getattr(msg, "content", None)
+        if not isinstance(content, str):
+            continue
+        try:
+            val = json.loads(content)
+            if isinstance(val, dict):
+                payloads.append(val)
+        except Exception:
+            continue
+    return payloads
+
+
+def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Optional[str]) -> None:
+    """parallel_agent_workflow をバックグラウンドで実行し、jobs に途中経過/結果を格納する。"""
+
+    with jobs_lock:
+        jobs[thread_id] = Job(
+            thread_id=thread_id,
+            status="running",
+            progress={
+                "started_at": time.time(),
+                "latest_message": None,
+                "last_tool": None,
+                "stdout": None,
+                "stderr": None,
+                "server_logs": deque(maxlen=200),
+            },
         )
 
-    return {
-        "status": "processing",
-        "thread_id": req.thread_id,
-        "message": "バックグラウンドで処理を再開しました。"
-    }
+    try:
+        # 接続先が分かるよう、最初にログしておく
+        from ai_platform_langghraph_app.parallel_agent_workflow import _get_executor_base_url
+
+        wf = ParallelAgentWorkflow()
+        graph = wf.create_graph().compile()
+
+        # parallel_agent_workflow 側のデフォルト分岐と合わせる
+        in_container = os.path.exists("/.dockerenv")
+        llm_base_url = os.getenv("BASE_URL") or ("http://litellm:4000/v1" if in_container else "http://localhost:4000/v1")
+        executor_base_url = _get_executor_base_url()
+
+        # ユーザーがZIPを渡してきた場合は、Supervisor がツール呼び出しで使えるようパスを明示する。
+        # run_cline_executor_zip は zip_path を受け取れるので、実ファイルパスを案内すれば良い。
+        user_message = message
+        if input_zip_path:
+            user_message += (
+                "\n\n[入力ZIP]\n"
+                "ユーザーがZIPファイルをアップロードしました。必要なら `run_cline_executor_zip` を使い、"
+                "次の zip_path を指定して処理してください。\n"
+                f"zip_path: {input_zip_path}\n"
+            )
+
+        state = {"messages": [HumanMessage(content=user_message)]}
+
+        with jobs_lock:
+            job = jobs.get(thread_id)
+            if job:
+                _append_server_log(job, "LangGraph stream started")
+                _append_server_log(job, f"llm_base_url={llm_base_url}")
+                _append_server_log(job, f"executor_base_url={executor_base_url}")
+
+        for event in graph.stream(state, stream_mode="values"):
+            # event は state(values) の dict を想定
+            messages = event.get("messages") if isinstance(event, dict) else None
+            if not isinstance(messages, list) or not messages:
+                continue
+
+            latest = messages[-1]
+            latest_content = getattr(latest, "content", None)
+
+            # 進捗更新
+            with jobs_lock:
+                job = jobs.get(thread_id)
+                if job:
+                    job.progress["latest_message"] = latest_content
+
+                    tool_payloads = _extract_tool_payloads_from_messages(messages)
+                    if tool_payloads:
+                        last_tool = tool_payloads[-1]
+                        job.progress["last_tool"] = last_tool
+                        _append_server_log(job, f"tool_result received keys={list(last_tool.keys())}")
+                        # stdout/stderr があれば status ポーリングで返せるようにコピー
+                        if "stdout" in last_tool:
+                            job.progress["stdout"] = last_tool.get("stdout")
+                        if "stderr" in last_tool:
+                            job.progress["stderr"] = last_tool.get("stderr")
+
+        # 最終 state を取得（stream で最後に来た event を使っても良いが、ここでは progress を採用）
+        with jobs_lock:
+            job = jobs.get(thread_id)
+            if job:
+                _append_server_log(job, "LangGraph stream finished")
+            jobs[thread_id] = Job(
+                thread_id=thread_id,
+                status="completed",
+                progress=job.progress if job else {"latest_message": None},
+                result={
+                    "thread_id": thread_id,
+                    "latest_message": job.progress.get("latest_message") if job else None,
+                    "last_tool": job.progress.get("last_tool") if job else None,
+                },
+            )
+
+    except Exception as e:
+        with jobs_lock:
+            job = jobs.get(thread_id)
+            if job:
+                _append_server_log(job, f"ERROR: {repr(e)}")
+                _append_server_log(job, traceback.format_exc())
+            jobs[thread_id] = Job(
+                thread_id=thread_id,
+                status="failed",
+                progress=job.progress if job else {},
+                error=repr(e),
+            )
+    finally:
+        # 入力ZIPはPoCのため、そのまま残す（必要なら削除に変更可能）
+        pass
+
+
+def _start_background_thread(thread_id: str, message: str, input_zip_path: Optional[str]) -> None:
+    t = threading.Thread(target=_run_workflow_in_background, args=(thread_id, message, input_zip_path), daemon=True)
+    t.start()
+
+
+# =====================================================
+# API
+# =====================================================
+
+
+@app.post("/api/submit")
+async def submit(
+    background_tasks: BackgroundTasks,
+    message: str = Form(...),
+    file: Optional[UploadFile] = File(None),
+):
+    """ユーザーからの質問（+ 任意ZIP）を受け取り、バックグラウンドで処理を開始する。"""
+
+    thread_id = str(uuid.uuid4())
+    with jobs_lock:
+        jobs[thread_id] = Job(thread_id=thread_id, status="queued", progress={"queued_at": time.time(), "server_logs": deque(maxlen=200)})
+
+    input_zip_path: Optional[str] = None
+    if file is not None:
+        # tool から参照できるよう一時ファイルに保存
+        tmp_dir = Path(tempfile.gettempdir()) / "sv-agent-executor" / thread_id
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        input_zip_path = str(tmp_dir / (file.filename or "input.zip"))
+        contents = await file.read()
+        Path(input_zip_path).write_bytes(contents)
+
+    # FastAPI の BackgroundTasks で「スレッド起動」を遅延実行
+    background_tasks.add_task(_start_background_thread, thread_id, message, input_zip_path)
+
+    return {"thread_id": thread_id, "status": "queued"}
+
 
 @app.get("/api/status/{thread_id}")
-async def get_status_endpoint(thread_id: str):
-    """現在の状態を確認する（ポーリング用）"""
-    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
-    snapshot = app_graph.get_state(config)
-    
-    if not snapshot.values:
-        raise HTTPException(status_code=404, detail="指定されたスレッドが見つかりません。")
-        
+async def status(thread_id: str):
+    """ジョブの進捗を返す。
+
+    - parallel_agent_workflow の tool 実行結果（stdout/stderr/成果物ZIPのbase64等）が
+      Supervisor へ渡るため、progress.last_tool に含まれる可能性があります。
+    """
+
+    with jobs_lock:
+        job = jobs.get(thread_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="thread_id not found")
+
+    # deque は JSON にできないので list に変換
+    progress = dict(job.progress)
+    if isinstance(progress.get("server_logs"), deque):
+        progress["server_logs"] = list(progress["server_logs"])  # type: ignore[assignment]
+
     return {
-        "thread_id": thread_id,
-        "latest_message": snapshot.values["messages"][-1].content
+        "thread_id": job.thread_id,
+        "status": job.status,
+        "progress": progress,
+        "result": job.result,
+        "error": job.error,
     }
+
 
 if __name__ == "__main__":
     import uvicorn
     import argparse
-    # -p --port オプションを追加して、起動時にポート番号を指定できるようにします
-    parser = argparse.ArgumentParser(description="Async Agent Webhook API Server")
+
+    parser = argparse.ArgumentParser(description="SV Agent Executor API Server")
     parser.add_argument("-p", "--port", type=int, default=5202, help="Port to run the API server on (default: 5202)")
     args = parser.parse_args()
     uvicorn.run(app, host="0.0.0.0", port=args.port)
-    

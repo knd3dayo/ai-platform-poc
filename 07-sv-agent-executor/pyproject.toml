@@ -22,7 +22,9 @@ dependencies = [
     "langgraph-checkpoint-sqlite",
     "uvicorn",
     "aiosqlite",
-    "requests"
+    "requests",
+    # FastAPI Form/File (multipart/form-data) を使うために必要
+    "python-multipart"
 ]
 
 [tool.setuptools.packages.find]
