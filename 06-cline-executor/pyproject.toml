@@ -22,7 +22,8 @@ dependencies = [
     "langchain-openai",
     "docker",
     "python-multipart",
-    "uvicorn"
+    "uvicorn",
+    "python-on-whales"
 ]
 
 [tool.setuptools.packages.find]

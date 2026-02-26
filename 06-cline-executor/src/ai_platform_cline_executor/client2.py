@@ -1,65 +1,89 @@
 import requests
 import shutil
 import os
-
-
-import requests
 import time
-import json
+import pathlib
 
-# 設定：APIのURL（ホスト実行なら localhost、コンテナ間ならサービス名）
+# 設定
 BASE_URL = "http://localhost:8000"
+SRC_DIR = "./src"        # 送信したいソースコードがあるディレクトリ
+ZIP_NAME = "temp_project" # 作成される一時ファイル名
 
-def test_cline_flow():
-    print("🚀 1. タスクを開始します...")
+def test_cline_zip_flow(resume_task_id=None):
+    # 0. 事前準備：送信対象のディレクトリがない場合は作成（テスト用）
+    if not os.path.exists(SRC_DIR):
+        os.makedirs(SRC_DIR)
+        with open(f"{SRC_DIR}/main.py", "w") as f:
+            f.write("def start():\n    print('Starting project...')\n")
+
+    print(f"🚀 1. プロジェクトをZIP化して送信します... {'(Resume: ' + resume_task_id + ')' if resume_task_id else ''}")
     
     # 1. フォルダをZIP化
-    shutil.make_archive("my_project", "zip", "./src")
+    # base_name="temp_project" -> temp_project.zip が作られる
+    zip_file_path = shutil.make_archive(ZIP_NAME, "zip", SRC_DIR)
 
-    # 実行リクエスト
-    # 2. 送信
-    with open("my_project.zip", "rb") as f:
-        files = {"file": ("my_project.zip", f, "application/zip")}
-        data = {"prompt": "プロジェクト全体のバグを探して修正して", "timeout": 600}
-        response = requests.post("http://localhost:8000/execute/zip", files=files, data=data)
+    try:
+        # 2. APIへ送信
+        with open(zip_file_path, "rb") as f:
+            files = {"file": (os.path.basename(zip_file_path), f, "application/zip")}
+            # フォームデータ
+            data = {
+                "prompt": "プロジェクトの main.py にログ出力機能を追加し、全体の構造を整理してください。",
+                "timeout": 600
+            }
+            # クエリパラメータで task_id を渡せるようにする
+            params = {"task_id": resume_task_id} if resume_task_id else {}
+            
+            response = requests.post(f"{BASE_URL}/execute/zip", files=files, data=data, params=params)
 
-    if response.status_code != 200:
-        print(f"❌ エラー: {response.text}")
-        return
+        if response.status_code != 200:
+            print(f"❌ エラー: {response.text}")
+            return
 
-    task_id = response.json()["task_id"]
-    print(f"✅ タスク受理: task_id = {task_id}")
+        task_id = response.json()["task_id"]
+        print(f"✅ タスク受理: task_id = {task_id}")
 
-    # 2. ポーリング（状態監視）
-    print("⏳ 2. 実行完了を待機中（ポーリング開始）...")
-    start_time = time.time()
-    
-    while True:
-        status_res = requests.get(f"{BASE_URL}/status/{task_id}")
-        status_data = status_res.json()
-        status = status_data["status"]
-
-        if status in ["completed", "failed", "timeout", "cancelled"]:
-            print(f"\n🏁 3. 実行終了: {status}")
-            break
+        # 3. ポーリング（状態監視）
+        print("⏳ 2. 実行中（リアルタイムログ表示）...")
+        start_time = time.time()
+        last_log_len = 0
         
-        # 経過を表示
-        elapsed = int(time.time() - start_time)
-        print(f"   [経過 {elapsed}s] ステータス: {status}...", end="\r")
-        time.sleep(2)
+        while True:
+            status_res = requests.get(f"{BASE_URL}/status/{task_id}", params={"tail": 20})
+            status_data = status_res.json()
+            status = status_data["status"]
 
-    # 4. 結果の表示
-    print("\n" + "="*50)
-    if status == "completed":
-        print("📝 --- Clineの出力 (stdout) ---")
-        print(status_data.get("stdout"))
-        print("\n📂 --- 生成・更新されたファイル ---")
-        for artifact in status_data.get("artifacts", []):
-            print(f"  - {artifact}")
-    else:
-        print("❌ --- エラー内容 (stderr) ---")
-        print(status_data.get("stderr"))
-    print("="*50)
+            # 新着ログを表示
+            current_stdout = status_data.get("stdout") or ""
+            if len(current_stdout) > last_log_len:
+                print(f"\n[Cline Log]\n{current_stdout[last_log_len:]}", end="")
+                last_log_len = len(current_stdout)
+
+            if status in ["completed", "failed", "timeout", "cancelled"]:
+                print(f"\n🏁 3. 実行終了: {status}")
+                break
+            
+            elapsed = int(time.time() - start_time)
+            print(f"   [経過 {elapsed}s] ステータス: {status}...", end="\r")
+            time.sleep(2)
+
+        # 4. 結果表示
+        print("\n" + "="*50)
+        if status == "completed":
+            print("📝 --- 最終結果 ---")
+            print(status_data.get("stdout"))
+            print("\n📂 --- 成果物リスト ---")
+            for artifact in status_data.get("artifacts", []):
+                print(f"  - {artifact}")
+        else:
+            print(f"❌ エラー内容: {status_data.get('stderr')}")
+        print("="*50)
+
+    finally:
+        # 5. 後片付け：作成した一時ZIPファイルを削除
+        if os.path.exists(zip_file_path):
+            os.remove(zip_file_path)
+            print(f"\n🧹 一時ファイル {zip_file_path} を削除しました。")
 
 if __name__ == "__main__":
-    test_cline_flow()
+    test_cline_zip_flow()

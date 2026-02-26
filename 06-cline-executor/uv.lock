@@ -17,6 +17,7 @@ dependencies = [
     { name = "pytest" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
+    { name = "python-on-whales" },
     { name = "pyyaml" },
     { name = "uvicorn" },
 ]
@@ -33,6 +34,7 @@ requires-dist = [
     { name = "pytest" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
+    { name = "python-on-whales" },
     { name = "pyyaml" },
     { name = "uvicorn" },
 ]
@@ -768,7 +770,7 @@ wheels = [
 
 [[package]]
 name = "litellm"
-version = "1.81.15"
+version = "1.81.16"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -784,9 +786,9 @@ dependencies = [
     { name = "tiktoken" },
     { name = "tokenizers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/70/0c/62a0fdc5adae6d205338f9239175aa6a93818e58b75cf000a9c7214a3d9f/litellm-1.81.15.tar.gz", hash = "sha256:a8a6277a53280762051c5818ebc76dd5f036368b9426c6f21795ae7f1ac6ebdc", size = 16597039, upload-time = "2026-02-24T06:52:50.892Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d6/36/3cbb22d6ef88c10f3fa4f04664c2a37e93a2e6f9c51899cd9fd025cb0a50/litellm-1.81.16.tar.gz", hash = "sha256:264a3868942e722cd6c19c2d625524fe624a1b6961c37c22d299dc7ea99823b3", size = 16668405, upload-time = "2026-02-26T13:01:48.429Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/78/fd/da11826dda0d332e360b9ead6c0c992d612ecb85b00df494823843cfcda3/litellm-1.81.15-py3-none-any.whl", hash = "sha256:2fa253658702509ce09fe0e172e5a47baaadf697fb0f784c7fd4ff665ae76ae1", size = 14682123, upload-time = "2026-02-24T06:52:48.084Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/1e/0022cde913bac87a493e4a182b8768f75e7ae90b64d4e11acb009b18311f/litellm-1.81.16-py3-none-any.whl", hash = "sha256:d6bcc13acbd26719e07bfa6b9923740e88409cbf1f9d626d85fc9ae0e0eec88c", size = 14774277, upload-time = "2026-02-26T13:01:45.652Z" },
 ]
 
 [[package]]
@@ -1262,6 +1264,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/01/979e98d542a70714b0cb2b6728ed0b7c46792b695e3eaec3e20711271ca3/python_multipart-0.0.22.tar.gz", hash = "sha256:7340bef99a7e0032613f56dc36027b959fd3b30a787ed62d310e951f7c3a3a58", size = 37612, upload-time = "2026-01-25T10:15:56.219Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1b/d0/397f9626e711ff749a95d96b7af99b9c566a9bb5129b8e4c10fc4d100304/python_multipart-0.0.22-py3-none-any.whl", hash = "sha256:2b2cd894c83d21bf49d702499531c7bafd057d730c201782048f7945d82de155", size = 24579, upload-time = "2026-01-25T10:15:54.811Z" },
+]
+
+[[package]]
+name = "python-on-whales"
+version = "0.80.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/17/8e/0f76b8ccd44d7acaeb2ef15109b039a00cee5df9935249c1aa704e749f4a/python_on_whales-0.80.0.tar.gz", hash = "sha256:0f18dda93a621dc34c5c26d0dbdc20003dca07a02114c4ce60910c4afb12c1ac", size = 114918, upload-time = "2026-01-10T18:00:56.207Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f2/d9/7dc70cfd792b420ccbdb249be4a43e949b5c151120b7abfdcacd93e37b2b/python_on_whales-0.80.0-py3-none-any.whl", hash = "sha256:3a7207899e5189695e54859a4c49461306c67fe8545a7eb53f884e342550c37d", size = 119194, upload-time = "2026-01-10T18:00:54.776Z" },
 ]
 
 [[package]]
