@@ -98,7 +98,7 @@ async def download_artifacts_zip(task_id: str):
 async def cancel_task(task_id: str):
     return await ComposeRunner.cancel_task(task_id)
 
-if __name__ == "__main__":
+def main():
     load_dotenv()
 
     # 引数でcomposeプロジェクトディレクトリ、ファイルを指定できるようにする
@@ -114,3 +114,6 @@ if __name__ == "__main__":
 
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=args.port)
+
+if __name__ == "__main__":
+    main()
