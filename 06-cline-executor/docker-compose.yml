@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: cline-executor-image
     stdin_open: true
     tty: true
     working_dir: /workspace
@@ -11,9 +12,9 @@ services:
     environment:
       # ホスト側の .env から値を渡す
       - CLINE_API_PROVIDER=${CLINE_API_PROVIDER}
-      - MY_API_KEY=${MY_API_KEY}
-      - MY_BASE_URL=${MY_BASE_URL}
-      - MY_MODEL=${MY_MODEL}
+      - CLINE_API_KEY=${CLINE_API_KEY}
+      - CLINE_API_BASE_URL=${CLINE_API_BASE_URL}
+      - CLINE_MODEL_ID=${CLINE_MODEL_ID}
 
 networks:
   default:
