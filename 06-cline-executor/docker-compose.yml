@@ -1,0 +1,21 @@
+services:
+  cline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    stdin_open: true
+    tty: true
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      # ホスト側の .env から値を渡す
+      - CLINE_API_PROVIDER=${CLINE_API_PROVIDER}
+      - MY_API_KEY=${MY_API_KEY}
+      - MY_BASE_URL=${MY_BASE_URL}
+      - MY_MODEL=${MY_MODEL}
+
+networks:
+  default:
+    name: ai_platform_net
+    external: true
