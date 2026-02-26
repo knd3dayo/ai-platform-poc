@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional, List, Deque
 from fastapi import FastAPI, BackgroundTasks, HTTPException, UploadFile, File, Form
 
 from langchain_core.messages import HumanMessage
+from langgraph.graph import MessagesState
 
 from ai_platform_langghraph_app.parallel_agent_workflow import ParallelAgentWorkflow
 
@@ -120,7 +121,7 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
                 f"zip_path: {input_zip_path}\n"
             )
 
-        state = {"messages": [HumanMessage(content=user_message)]}
+        state: MessagesState = {"messages": [HumanMessage(content=user_message)]}
 
         with jobs_lock:
             job = jobs.get(thread_id)
