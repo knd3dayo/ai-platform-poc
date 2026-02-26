@@ -23,9 +23,16 @@ dependencies = [
     "docker",
     "python-multipart",
     "uvicorn",
-    "python-on-whales"
+    "python-on-whales",
+    "tabulate"
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[project.scripts]
+exec-api = "ai_platform_cline_executor.api.main:main"
+exec-cli = "ai_platform_cline_executor.cli.main:app"
+
+[tool.uv]
+managed = true
