@@ -57,7 +57,7 @@ async def monitor_container(task_id: str, container, task_dir: pathlib.Path, tim
 
         # 実行結果の回収
         res = container.wait()
-# ログを個別に取得して print してみる
+        # ログを個別に取得して print してみる
         out_logs = container.logs(stdout=True, stderr=False).decode('utf-8')
         err_logs = container.logs(stdout=False, stderr=True).decode('utf-8')
         
