@@ -1,4 +1,5 @@
-from typing import Dict, Optional, List, Any, cast, Tuple
+from typing import Dict, Optional, cast, ClassVar
+from datetime import datetime
 import os
 import uuid
 import pathlib
@@ -12,20 +13,19 @@ from fastapi import UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 from python_on_whales import docker as whales, Container, DockerClient
-from .model import TaskStatus, tasks, ComposeConfig
+from .model import TaskStatus, ComposeConfig
 from .utils import ExecutorUtil
+from .task_manager import TaskManager
 
-# --- 設定：環境に合わせて調整 ---
-HOST_PROJECTS_ROOT = os.getenv("HOST_PROJECTS_ROOT", "/home/user/ai-platform/data/projects")
-TASKS_FILE = pathlib.Path(HOST_PROJECTS_ROOT) / "tasks_db.json"
 
 class ComposeRunner:
-    """docker-compose.yml から設定を動的に読み取り、Cline を実行するクラス"""
+    """docker-compose.yml から設定を動的に読み取り、コンテナを実行するクラス"""
+
     def __init__(self, compose_config: ComposeConfig, task_id: Optional[str] = None):
 
         self.compose_config = compose_config 
         self.task_id = task_id or str(uuid.uuid4())  # タスクごとに一意のIDを生成
-        self.task_dir = pathlib.Path(HOST_PROJECTS_ROOT) / self.task_id
+        self.task_dir = TaskManager.get_projects_root() / self.task_id
         self.task_dir.mkdir(parents=True, exist_ok=True)
 
         # クライアントは一度作れば使い回せます
@@ -84,7 +84,9 @@ class ComposeRunner:
         ) -> str:
         
         # 1. 既存の実行を確認（多重実行防止）
-        if self.task_id in tasks and tasks[self.task_id].status == "running":
+        task = TaskManager.get_task(self.task_id)
+        
+        if task and task.status == "running":
             raise RuntimeError(f"Task {self.task_id} is already running")           
         
         # 2. 環境変数からコマンドを生成
@@ -101,12 +103,12 @@ class ComposeRunner:
             raise RuntimeError("Failed to launch container")
 
         # 4. ステータス更新（Pydanticモデルを使用）
-        tasks[self.task_id] = TaskStatus(
+        TaskManager.upsert_task(self.task_id, TaskStatus(
             task_id=self.task_id,
             status="running",
             created_at=datetime.now(),
             container_id=container.id,
-        )
+        ))
 
         # 5. 監視開始（非同期タスクとして実行） 
         if background_tasks:
@@ -133,7 +135,15 @@ class ComposeRunner:
                 
                 if (asyncio.get_event_loop().time() - start_time) > timeout:
                     container.kill()
-                    tasks[task_id].status = "timeout"
+                    task = TaskManager.get_task(task_id)
+                    if task:
+                        TaskManager.upsert_task(task_id, TaskStatus(
+                            task_id=task_id,
+                            status="failed",
+                            created_at=task.created_at,
+                            container_id=container.id,
+                            stderr=f"Task timed out after {timeout} seconds"
+                        ))
                     return
                 await asyncio.sleep(1)
 
@@ -144,13 +154,22 @@ class ComposeRunner:
             out_logs = container.logs()
             
             artifacts = [str(f.relative_to(task_dir)) for f in task_dir.glob("**/*") if f.is_file()]
-            tasks[task_id].status = "completed" if exit_code == 0 else "failed"
-            tasks[task_id].stdout = out_logs
-            tasks[task_id].artifacts = artifacts
+            task = TaskManager.get_task(task_id)
+            if task:
+                task.status = "completed" if exit_code == 0 else "failed"
+                task.stdout = out_logs
+                task.artifacts = artifacts
 
         except Exception as e:
-            tasks[task_id].status = "failed"
-            tasks[task_id].stderr = f"Monitor Error: {str(e)}"
+            task = TaskManager.get_task(task_id)
+            if task:
+                TaskManager.upsert_task(task_id, TaskStatus(
+                    task_id=task_id,
+                    status="failed",
+                    created_at=task.created_at,
+                    container_id=container.id,
+                    stderr=f"Monitor Error: {str(e)}"
+                ))
         finally:
             # 既に remove=True で起動しているが、念のため
             try: container.remove(force=True)
@@ -183,7 +202,7 @@ class ComposeRunner:
             runner.add_initial_files(initial_files)
 
         # 3. コマンドと実行設定
-        command_base = os.getenv('COMMAND', 'cline')
+        command_base = os.getenv('COMMAND', 'cline -y')
         command = f"{command_base} {prompt}"
         
         # 4. 実行開始（内部で launch_container と monitor_container を呼び出す）
@@ -193,10 +212,9 @@ class ComposeRunner:
 # --- ステータス取得の修正 ---
     @classmethod
     async def get_status(cls, task_id: str, tail: int = 200) -> TaskStatus:
-        if task_id not in tasks:
+        task = TaskManager.get_task(task_id)
+        if not task:
             raise HTTPException(status_code=404, detail="Task not found")
-
-        task = tasks[task_id]
 
         if task.status == "running" and task.container_id:
             try:
@@ -220,12 +238,18 @@ class ComposeRunner:
     # --- キャンセルの修正 ---
     @classmethod
     async def cancel_task(cls, task_id: str):
-        task = tasks.get(task_id)
+        task = TaskManager.get_task(task_id)
         if task and task.status == "running" and task.container_id:
             try:
                 # whales で強制終了
                 whales.container.kill(task.container_id)
-                task.status = "cancelled"
+                TaskManager.upsert_task(task_id, TaskStatus(
+                    task_id=task_id,
+                    status="cancelled",
+                    created_at=task.created_at,
+                    container_id=task.container_id,
+                    stderr=task.stderr
+                ))
                 return {"message": f"Task {task_id} cancelled."}
             except Exception as e:
                 return {"message": f"Cancel failed: {str(e)}"}
@@ -234,12 +258,12 @@ class ComposeRunner:
     @classmethod
     async def download_artifacts_zip(cls, task_id: str):
         """タスクの作業用ディレクトリをZIP化して返します。"""
-        task_dir = pathlib.Path(HOST_PROJECTS_ROOT) / task_id
+        task_dir =  TaskManager.get_projects_root() / task_id
         if not task_dir.exists() or not task_dir.is_dir():
             raise HTTPException(status_code=404, detail="Artifacts directory not found")
 
         # 実行中は結果が不安定になり得るので、原則 completed のみ許可
-        task = tasks.get(task_id)
+        task = TaskManager.get_task(task_id)
         if task and task.status not in ("completed", "failed"):
             raise HTTPException(status_code=409, detail=f"Task is {task.status}, artifacts may not be ready for download")
 
@@ -266,18 +290,28 @@ class ComposeRunner:
     @classmethod
     def save_tasks(cls):
         """現在のタスク状態をファイルに保存する"""
-        from .model import tasks # 循環参照を避けるためメソッド内でインポート
-        with open(TASKS_FILE, "w") as f:
-            data = {k: v.model_dump(mode='json') for k, v in tasks.items()}
+        with open(TaskManager.get_tasks_file_path(), "w") as f:
+            data = {k: v.model_dump(mode='json') for k, v in TaskManager.get_all_tasks().items()}
             json.dump(data, f, indent=2)
 
     @classmethod
     def load_tasks(cls):
         """ファイルからタスク状態を復元する"""
-        from .model import tasks, TaskStatus
-        if TASKS_FILE.exists():
-            with open(TASKS_FILE, "r") as f:
+        if TaskManager.get_tasks_file_path().exists():
+            with open(TaskManager.get_tasks_file_path(), "r") as f:
                 data = json.load(f)
                 for k, v in data.items():
-                    tasks[k] = TaskStatus(**v)
-                    
+                    TaskManager.upsert_task(k, TaskStatus(**v))
+
+    @classmethod
+    def get_task(cls, task_id: str):
+        """タスクIDからタスク情報を取得する"""
+        task = TaskManager.get_all_tasks().get(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return task
+    
+    @classmethod
+    def get_all_tasks(cls):
+        """全タスクの情報を取得する"""
+        return TaskManager.get_all_tasks()

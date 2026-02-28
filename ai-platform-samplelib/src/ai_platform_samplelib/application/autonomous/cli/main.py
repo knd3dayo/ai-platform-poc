@@ -11,32 +11,13 @@ import shutil
 # 内部パッケージのインポート
 from ..core.runner import ComposeRunner
 from ..core.model import TaskStatus, ComposeConfig
+from ..core.task_manager import TaskManager
 
 # 設定
 load_dotenv()
 TASKS_DB_PATH = Path(os.getenv("HOST_PROJECTS_ROOT", ".")) / "tasks_db.json"
 
 app = typer.Typer(help="Cline Executor CLI Tool")
-
-def load_tasks_db() -> dict:
-    """ファイルからタスク情報を読み込む"""
-    if not TASKS_DB_PATH.exists():
-        return {}
-    with open(TASKS_DB_PATH, "r") as f:
-        data = json.load(f)
-        # グローバルな tasks 辞書を更新 (runner.py側で定義されている想定)
-        from ..core import runner
-        for tid, tdata in data.items():
-            runner.tasks[tid] = TaskStatus(**tdata)
-        return runner.tasks
-
-def save_tasks_db():
-    """タスク情報をファイルに保存する"""
-    from ..core import runner
-    with open(TASKS_DB_PATH, "w") as f:
-        # PydanticモデルをJSON化
-        data = {k: v.model_dump(mode='json') for k, v in runner.tasks.items()}
-        json.dump(data, f, indent=2)
 
 @app.command()
 def run(
@@ -46,7 +27,7 @@ def run(
     detach: bool = typer.Option(False, "--detach", "-d", help="バックグラウンドで実行する"),
 ):
     """新しいタスクを実行します。"""
-    load_tasks_db()
+    ComposeRunner.load_tasks()  # タスク状態をロードして最新にする
     
     async def _execute():
         # CLIではBackgroundTasksがないため、監視ロジックを制御するためにNoneを渡す
@@ -58,7 +39,7 @@ def run(
             task_id=task_id,
             timeout=timeout
         )
-        save_tasks_db()
+        ComposeRunner.save_tasks()  # タスク状態を保存
         typer.secho(f"🚀 タスクを開始しました: {tid}", fg=typer.colors.GREEN)
         
         if not detach:
@@ -69,7 +50,7 @@ def run(
                     break
                 await asyncio.sleep(2)
             
-            save_tasks_db()
+            ComposeRunner.save_tasks()
             typer.secho(f"\n🏁 終了ステータス: {status_data.status}", fg=typer.colors.CYAN)
 
     asyncio.run(_execute())
@@ -77,7 +58,8 @@ def run(
 @app.command(name="list")
 def list_tasks():
     """タスクの一覧を表示します。"""
-    tasks = load_tasks_db()
+    ComposeRunner.load_tasks()
+    tasks = ComposeRunner.get_all_tasks()
     if not tasks:
         typer.echo("タスクは見つかりませんでした。")
         return
@@ -91,8 +73,7 @@ def list_tasks():
 @app.command()
 def status(task_id: str, tail: int = typer.Option(20, help="ログの行数")):
     """特定のタスクの状態とログを確認します。"""
-    load_tasks_db()
-    
+
     async def _get():
         data = await ComposeRunner.get_status(task_id, tail=tail)
         typer.secho(f"=== Task: {task_id} [{data.status}] ===", fg=typer.colors.MAGENTA)
@@ -108,9 +89,8 @@ def status(task_id: str, tail: int = typer.Option(20, help="ログの行数")):
 @app.command()
 def cancel(task_id: str):
     """実行中のタスクを強制終了します。"""
-    load_tasks_db()
     asyncio.run(ComposeRunner.cancel_task(task_id))
-    save_tasks_db()
+    TaskManager.remove_task(task_id)  # タスクを管理から削除
     typer.echo(f"🛑 タスク {task_id} をキャンセルしました。")
 
 import shutil

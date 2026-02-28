@@ -41,8 +41,3 @@ class TaskStatus(BaseModel):
     created_at: datetime
     container_id: Optional[str] = None
 
-
-# タスク管理ストア（本番はRedis推奨）
-tasks: Dict[str, TaskStatus] = {}
-
-
