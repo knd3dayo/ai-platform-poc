@@ -3,12 +3,11 @@ import os
 import asyncio
 import zipfile
 from contextlib import asynccontextmanager
-
+from python_on_whales import docker as whales  # これを追加
 from fastapi import UploadFile, File, Form, FastAPI, HTTPException, BackgroundTasks
-from dotenv import load_dotenv
 
-from ..core.runner import ComposeRunner, docker_client
-from ..core.model import ClineRequest, TaskStatus
+from ..core.runner import ComposeRunner
+from ..core.model import ClineRequest, TaskStatus, tasks, ComposeConfig
 
 
 # --- Lifespan: アプリの起動と終了のライフサイクル管理 ---
@@ -31,16 +30,27 @@ async def lifespan(app: FastAPI):
         print(f"Error during cleanup: {e}")
 
 def cleanup_orphaned_containers():
-    """管理対象のコンテナを全削除する同期関数"""
-    # フィルタは labels={"managed_by": "executor-service"} でも可
-    containers = docker_client.containers.list(filters={"label": "managed_by=executor-service"})
-    for c in containers:
-        try:
-            c.remove(force=True)
-            print(f"Removed container {c.id}")
-        except Exception as e:
-            print(f"Failed to remove container {c.id}: {e}")
-
+    """管理対象のコンテナを全削除する同期関数 (python-on-whales 版)"""
+    print("Searching for orphaned containers...")
+    
+    # filters のキーは 'label' (単数形) です。
+    # ※ このフィルタを機能させるには docker-compose.yml に labels: managed_by=executor-service が必要です
+    try:
+        containers = whales.container.list(filters={"label": "managed_by=executor-service"})
+        for c in containers:
+            try:
+                # whales のコンテナオブジェクトは直接 .remove() を持っています
+                c.remove(force=True)
+                print(f"✅ Removed container {c.id[:12]}")
+            except Exception as e:
+                print(f"❌ Failed to remove container {c.id[:12]}: {e}")
+                
+        if not containers:
+            print("No orphaned containers found.")
+            
+    except Exception as e:
+        print(f"Error listing containers: {e}")
+        
 # lifespan を指定してアプリを初期化
 app = FastAPI(title="Cline Executor Service", lifespan=lifespan)
 
@@ -51,8 +61,10 @@ async def execute_cline(
     request: ClineRequest, background_tasks: BackgroundTasks, task_id: Optional[str] = None):
     try:
         # ロジックを完全に委譲
+        compose_config = ComposeConfig.from_env()
         new_task_id = await ComposeRunner.create_and_run(
             background_tasks=background_tasks,
+            compose_config=compose_config,
             prompt=request.prompt,
             initial_files=request.initial_files,
             task_id=task_id,
@@ -71,7 +83,9 @@ async def execute_cline_zip(
     timeout: int = Form(300)
 ):
     try:
+        compose_config = ComposeConfig.from_env()
         new_task_id = await ComposeRunner.create_and_run(
+            compose_config=compose_config,
             background_tasks=background_tasks,
             prompt=prompt,
             zip_file=file,
@@ -99,21 +113,24 @@ async def cancel_task(task_id: str):
     return await ComposeRunner.cancel_task(task_id)
 
 def main():
-    load_dotenv()
 
     # 引数でcomposeプロジェクトディレクトリ、ファイルを指定できるようにする
     import argparse
     parser = argparse.ArgumentParser(description="Docker Compose Runner API Server")
-    parser.add_argument("-d", "--project-dir", type=str, default=".", help="Path to the directory containing docker-compose.yml")
-    parser.add_argument("-f", "--compose-file", type=str, default="docker-compose.yml", help="Name of the docker-compose file")
     parser.add_argument("-p", "--port", type=int, default=8000, help="Port to run the API server on")
+    # -e --env-file オプションを追加して、環境変数ファイルを指定できるようにする
+    parser.add_argument("-e", "--env-file", type=str, default=".env", help="Path to the .env file for configuration")
 
     args = parser.parse_args()
-    os.environ["COMPOSE_PROJECT_DIRECTORY"] = args.project_dir
-    os.environ["COMPOSE_FILE"] = args.compose_file
+    port = args.port
+    env_file = args.env_file
 
+    ComposeConfig.set_env_file(env_file)  # 環境変数ファイルをセット
+    # ComposeConfigの内容を出力
+    compose_config = ComposeConfig.from_env()
+    print(f"Using Compose Config: {compose_config}")
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=args.port)
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     main()

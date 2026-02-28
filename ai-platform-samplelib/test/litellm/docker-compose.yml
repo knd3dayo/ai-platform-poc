@@ -1,0 +1,28 @@
+services:
+  mcp-server-test1:
+    build:
+      # ビルドの基準点
+      context: ${AI_PLATFORM_LIB:?AI_PLATFORM_LIBが未設定です}
+      # 基準点から見たDockerfileのパス
+      dockerfile: Dockerfile
+    
+    # --- ここから下は build の「中」ではなく「外」に書きます ---
+    image: ai-platform-samplelib-base    
+    working_dir: /app
+    
+    volumes:
+      # ソースコードを同期（Dockerfile内の COPY を上書きして開発しやすくする）
+      - "${AI_PLATFORM_LIB}:/app"
+    
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "5101:5101"
+    
+    # 起動コマンド（uv run で安全にモジュール実行）
+    command: ["uv", "run", "-m", "ai_platform_samplelib.tool.test_server.mcp_server"]
+
+networks:
+  default:
+    name: ai_platform_net
+    external: true

@@ -37,6 +37,8 @@ def test_cline_flow(resume_task_id=None):
         status_res = requests.get(f"{BASE_URL}/status/{task_id}", params={"tail": 10})
         status_data = status_res.json()
         status = status_data["status"]
+        
+        # print(status_data)  # デバッグ用に全データを表示
 
         # 新しいログがあれば表示
         current_stdout = status_data.get("stdout") or ""

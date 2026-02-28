@@ -5,39 +5,35 @@ import pathlib
 import tempfile
 import asyncio
 import json
+import shlex
 from datetime import datetime
 
 from fastapi import UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
-from python_on_whales import docker as whales, DockerClient, Container 
-import docker
-
-from .model import TaskStatus, tasks
+from python_on_whales import docker as whales, Container, DockerClient
+from .model import TaskStatus, tasks, ComposeConfig
 from .utils import ExecutorUtil
 
 # --- 設定：環境に合わせて調整 ---
 HOST_PROJECTS_ROOT = os.getenv("HOST_PROJECTS_ROOT", "/home/user/ai-platform/data/projects")
-CLINE_IMAGE = "cline-executor-image"
-NETWORK_NAME = "ai_platform_net"
 TASKS_FILE = pathlib.Path(HOST_PROJECTS_ROOT) / "tasks_db.json"
-
-docker_client = docker.from_env()
 
 class ComposeRunner:
     """docker-compose.yml から設定を動的に読み取り、Cline を実行するクラス"""
-    def __init__(self, task_id: Optional[str] = None, project_directory: str = ".", file: str = "docker-compose.yml"):
-        self.project_directory = os.path.abspath(project_directory)
-        self.compose_file = os.path.join(self.project_directory, file)
+    def __init__(self, compose_config: ComposeConfig, task_id: Optional[str] = None):
+
+        self.compose_config = compose_config 
         self.task_id = task_id or str(uuid.uuid4())  # タスクごとに一意のIDを生成
         self.task_dir = pathlib.Path(HOST_PROJECTS_ROOT) / self.task_id
         self.task_dir.mkdir(parents=True, exist_ok=True)
 
         # クライアントは一度作れば使い回せます
         self.docker = DockerClient(
-            compose_files=[self.compose_file],
-            compose_project_directory=self.project_directory,
-            compose_project_name="executor_service"
+            compose_files=[self.compose_config.get_compose_path()],
+            compose_project_directory=self.compose_config.project_directory,
+            # service_name ではなく task_id をベースにしたユニークな名前に
+            compose_project_name=f"task_{self.task_id}"
         )
 
     def add_initial_files(self, initial_files: Dict[str, str] | None):
@@ -51,19 +47,20 @@ class ComposeRunner:
         """アップロードされた ZIP ファイルを task_dir に展開します。"""
         ExecutorUtil.extract_zip_to_dir(zip_file, self.task_dir)
 
-    def launch_container(self, service_name: str, command: str = "", volumes: list = [], env: dict = {}):
+    def launch_container(self, command: str = "", volumes: list = [], env: dict = {}):
         """
         コンテナを起動し、task_id を返します。
         volumes: [(ホストパス, コンテナパス, モード), ...] のリスト
         """
         params = {
-            "service": service_name,
+            "service": self.compose_config.service_name,
             "detach": True,
-            "remove": True, # 終了時に自動削除
+            # "remove": True, # 終了時に自動削除
+            "tty": False,   # ★明示的に False を指定（あるいは省略）
         }
         
         if command:
-            params["command"] = command.split() if isinstance(command, str) else command
+            params["command"] = shlex.split(command)  # コマンドをリスト形式で渡す    
         if volumes:
             params["volumes"] = volumes
         if env:
@@ -86,7 +83,7 @@ class ComposeRunner:
             timeout: int = 300
         ) -> str:
         
-         # 1. 既存の実行を確認（多重実行防止）
+        # 1. 既存の実行を確認（多重実行防止）
         if self.task_id in tasks and tasks[self.task_id].status == "running":
             raise RuntimeError(f"Task {self.task_id} is already running")           
         
@@ -96,7 +93,6 @@ class ComposeRunner:
 
         # 3. コンテナ起動（self 内のメソッドを呼ぶ）
         container = self.launch_container(
-            service_name="executor", # docker-compose.yml 内のサービス名
             command=command,
             volumes=volumes,
             env=env
@@ -120,55 +116,50 @@ class ComposeRunner:
 
     # --- 内部ロジック ---
 
-    async def monitor_container(self, task_id: str, container, task_dir: pathlib.Path, timeout: int):
+    async def monitor_container(self, task_id: str, container: Container, task_dir: pathlib.Path, timeout: int):
+        # debug用 containerの設定内容
+        print(f"container.config: {container.config}")
+        print(f"container.args: {container.args}")
         try:
-            # 完了を待機
             start_time = asyncio.get_event_loop().time()
             while True:
+                # reload() で最新の状態（state）を同期
                 container.reload()
-                if container.status == 'exited':
+                # debug用
+                # print(f"Monitoring container {container.id[:12]}: status={container.state.status}, elapsed={int(asyncio.get_event_loop().time() - start_time)}s")
+                # whales のコンテナ状態チェック
+                if container.state.status == 'exited':
                     break
+                
                 if (asyncio.get_event_loop().time() - start_time) > timeout:
                     container.kill()
-                    # timeout 時点のログを可能なら保存
-                    try:
-                        out_logs, err_logs = ExecutorUtil.get_container_logs(container, tail=1000)
-                        tasks[task_id].stdout = out_logs
-                        tasks[task_id].stderr = err_logs
-                    except Exception:
-                        pass
                     tasks[task_id].status = "timeout"
                     return
                 await asyncio.sleep(1)
 
-            # 実行結果の回収
-            res = container.wait()
-            # ログを個別に取得して print してみる
-            out_logs, err_logs = ExecutorUtil.get_container_logs(container, tail=1000)
+            # 終了コードの取得
+            exit_code = container.state.exit_code
             
-            print(f"DEBUG [{task_id}] ExitCode: {res['StatusCode']}")
-            print(f"DEBUG [{task_id}] STDOUT: {out_logs}")
-            print(f"DEBUG [{task_id}] STDERR: {err_logs}")
-
-            # 成果物（ファイル名）のスキャン
+            # ログ取得 (whales では直接 logs() が呼べ、文字列で返ります)
+            out_logs = container.logs()
+            
             artifacts = [str(f.relative_to(task_dir)) for f in task_dir.glob("**/*") if f.is_file()]
-
-            tasks[task_id].status = "completed" if res["StatusCode"] == 0 else "failed"
+            tasks[task_id].status = "completed" if exit_code == 0 else "failed"
             tasks[task_id].stdout = out_logs
-            tasks[task_id].stderr = err_logs
             tasks[task_id].artifacts = artifacts
+
         except Exception as e:
             tasks[task_id].status = "failed"
-            tasks[task_id].stderr = str(e)
+            tasks[task_id].stderr = f"Monitor Error: {str(e)}"
         finally:
-            try:
-                container.remove(force=True)
-            except:
-                pass
-
+            # 既に remove=True で起動しているが、念のため
+            try: container.remove(force=True)
+            except: pass
+            
     @classmethod
     async def create_and_run(
         cls, 
+        compose_config: ComposeConfig,
         background_tasks: BackgroundTasks | None,
         prompt: str,
         initial_files: Optional[Dict[str, str]] = None,
@@ -180,13 +171,9 @@ class ComposeRunner:
         インスタンス生成からコンテナ起動までを一括で行うエントリーポイント
         """
         # 1. Runnerの準備（プロジェクトパス等は環境変数から取得）
-        project_dir = os.getenv("COMPOSE_PROJECT_DIRECTORY", ".")
-        compose_file = os.getenv("COMPOSE_FILE", "docker-compose.yml")
-        
         runner = cls(
             task_id=task_id, 
-            project_directory=project_dir, 
-            file=compose_file
+            compose_config=compose_config
         )
 
         # 2. ファイルの配置（ZIPまたは初期ファイル）
@@ -196,48 +183,54 @@ class ComposeRunner:
             runner.add_initial_files(initial_files)
 
         # 3. コマンドと実行設定
-        command_base = os.getenv('COMMAND', 'cline -y')
-        command = f"{command_base} '{prompt}'"
+        command_base = os.getenv('COMMAND', 'cline')
+        command = f"{command_base} {prompt}"
         
         # 4. 実行開始（内部で launch_container と monitor_container を呼び出す）
         # runner.run() は以前実装した「ステータス更新と監視開始」を行うメソッドです
         return await runner.run(background_tasks, command, timeout=timeout)
 
+# --- ステータス取得の修正 ---
     @classmethod
     async def get_status(cls, task_id: str, tail: int = 200) -> TaskStatus:
-        """
-        指定したタスクの状態を取得します。
-        実行中の場合は Docker コンテナから最新のログを取得してマージしたモデルを返します。
-        """
         if task_id not in tasks:
             raise HTTPException(status_code=404, detail="Task not found")
 
         task = tasks[task_id]
 
-        # 実行中の場合のみ、最新のログを動的に取得して反映したモデルを作る
         if task.status == "running" and task.container_id:
             try:
-                # Docker コンテナからログを取得
-                container = docker_client.containers.get(task.container_id)
-                stdout, stderr = ExecutorUtil.get_container_logs(container, tail=tail)
-
-                # 既存のデータをベースに、最新ログを上書きした新しい TaskStatus を作成して返す
-                # ※ tasks[task_id] 自体は更新せず、レスポンス用の一時的なモデルを作る
-                return TaskStatus(
-                    **task.model_dump(exclude={"stdout", "stderr"}), 
-                    stdout=stdout, 
-                    stderr=stderr
-                )
+                # whales を使って実行中のコンテナからログを取得
+                # 戻り値は結合されたログの文字列です
+                logs = whales.container.logs(task.container_id, tail=tail)
+                if isinstance(logs, str):
+                    logs_str = logs
+                else:
+                    # Convert iterable of (stream, bytes) to string
+                    logs_str = "".join(
+                        b.decode("utf-8", errors="replace") if isinstance(b, bytes) else str(b)
+                        for _, b in logs
+                    )
+                return TaskStatus(**task.model_dump(exclude={"stdout"}), stdout=logs_str)
             except Exception as e:
-                # ログ取得に失敗した場合でも、エラー情報を乗せた TaskStatus を返す
-                return TaskStatus(
-                    **task.model_dump(exclude={"stderr"}), 
-                    stderr=f"Failed to fetch running logs: {e}"
-                )
+                return TaskStatus(**task.model_dump(exclude={"stderr"}), stderr=f"Log fetch failed: {e}")
 
-        # 完了済み、またはエラー済みの場合は保存されているモデルをそのまま返す
         return task
 
+    # --- キャンセルの修正 ---
+    @classmethod
+    async def cancel_task(cls, task_id: str):
+        task = tasks.get(task_id)
+        if task and task.status == "running" and task.container_id:
+            try:
+                # whales で強制終了
+                whales.container.kill(task.container_id)
+                task.status = "cancelled"
+                return {"message": f"Task {task_id} cancelled."}
+            except Exception as e:
+                return {"message": f"Cancel failed: {str(e)}"}
+        return {"message": "Task not found or not running."}
+    
     @classmethod
     async def download_artifacts_zip(cls, task_id: str):
         """タスクの作業用ディレクトリをZIP化して返します。"""
@@ -269,35 +262,6 @@ class ComposeRunner:
             background=BackgroundTask(ExecutorUtil.cleanup_file, str(tmp_path)),
         )
 
-    @classmethod
-    async def cancel_task(cls, task_id: str):
-        """実行中のタスクを強制終了します"""
-        task = tasks.get(task_id)
-        if not task:
-            raise HTTPException(status_code=404, detail="Task not found")
-        
-        if task.status == "running":
-            try:
-                container_id = task.container_id
-                if not container_id:
-                    return {"message": "container_id not found for this task"}
-
-                container = docker_client.containers.get(container_id)
-                # kill 前に直近ログを取得しておく（取得不可でも握りつぶす）
-                try:
-                    stdout, stderr = ExecutorUtil.get_container_logs(container, tail=200)
-                    task.stdout = stdout
-                    task.stderr = stderr
-                except Exception:
-                    pass
-
-                container.kill()
-                task.status = "cancelled"
-                return {"message": f"Task {task_id} has been cancelled."}
-            except Exception as e:
-                return {"message": f"Task already finished or error: {str(e)}"}
-        
-        return {"message": f"Task is in {task.status} state and cannot be cancelled."}
 
     @classmethod
     def save_tasks(cls):
@@ -316,3 +280,4 @@ class ComposeRunner:
                 data = json.load(f)
                 for k, v in data.items():
                     tasks[k] = TaskStatus(**v)
+                    

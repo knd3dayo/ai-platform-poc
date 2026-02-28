@@ -3,7 +3,7 @@ requires = ["setuptools>=62.6", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ai-platform-docker-executor"
+name = "ai-platform-sample-lib"
 version = "0.1.0"
 authors = [
     { name = "knd3dayo", email = "knd3dayo@gmail.com" }
@@ -17,22 +17,14 @@ dependencies = [
     "pyyaml",
     "openai",
     "fastapi",
+    "fastmcp",
     "pytest",
     "langgraph",
     "langchain-openai",
-    "docker",
-    "python-multipart",
-    "uvicorn",
-    "python-on-whales",
+    "python_on_whales",
     "tabulate"
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[project.scripts]
-exec-api = "ai_platform_cline_executor.api.main:main"
-exec-cli = "ai_platform_cline_executor.cli.main:app"
-
-[tool.uv]
-managed = true
