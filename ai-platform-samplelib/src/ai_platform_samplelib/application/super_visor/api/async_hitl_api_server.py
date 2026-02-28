@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 
-from ai_platform_app.test_langgraph_hitl import LangGraphWorkflowTest1
+from ..core.test_langgraph_hitl import LangGraphWorkflowTest1
 # Pylance対策として MessagesState もインポートしておきます
 from langgraph.graph import MessagesState 
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver

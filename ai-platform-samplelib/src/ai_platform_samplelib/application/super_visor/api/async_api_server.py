@@ -2,18 +2,47 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import requests
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from contextlib import asynccontextmanager
+
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import MessagesState
 
 # 先ほど完成したクラスをインポート（パスは環境に合わせて適宜修正してください）
-from ai_platform_app.test_langgraph_hitl import LangGraphWorkflowTest1
+from ..core.test_langgraph_hitl import LangGraphWorkflowTest1
+
+# ==========================================
+# FastAPI アプリケーションの実装
+# ==========================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- [Startup] アプリ起動時の処理 ---
+    # 非同期チェックポインターを初期化
+    # ※ aiosqlite を使うため、AsyncSqliteSaver を使用
+    checkpointer = AsyncSqliteSaver.from_conn_string("langgraph_state.db")
+    
+    # 接続を開始 (context managerとして入る)
+    async with checkpointer as saver:
+        # グラフをコンパイル
+        app_graph = chat_poc.create_graph().compile(
+            checkpointer=saver,
+            interrupt_before=["tools"]
+        )
+        # コンパイルしたグラフを app.state に保存（リクエスト間で共有可能）
+        app.state.app_graph = app_graph
+        
+        print("🚀 LangGraph App with Async Checkpointer is ready")
+        yield  # ここでアプリが稼働する
+        
+    # --- [Shutdown] アプリ終了時の処理 ---
+    print("🛑 Shutting down...")
+
 
 app = FastAPI(title="Async Agent Webhook API")
 
 # グローバルなエージェントインスタンスの作成
 chat_poc = LangGraphWorkflowTest1()
-app_graph = chat_poc.create_app()
 
 # ==========================================
 # データモデル
@@ -49,11 +78,11 @@ def background_agent_task(
 
     try:
         # LangGraphの処理を実行（initial_inputがNoneの場合は中断箇所から再開）
-        for event in app_graph.stream(initial_input, config=config, stream_mode="values"):
+        for event in app.state.app_graph.stream(initial_input, config=config, stream_mode="values"):
             pass 
 
         # 最終状態の取得
-        snapshot = app_graph.get_state(config)
+        snapshot = app.state.app_graph.get_state(config)
         
         # HITL（承認待ち）で止まった場合のハンドリング
         if snapshot.next and snapshot.next[0] == "tools":
@@ -121,7 +150,7 @@ async def chat_async_endpoint(req: AsyncChatRequest, background_tasks: Backgroun
 async def resume_async_endpoint(req: AsyncResumeRequest, background_tasks: BackgroundTasks):
     """ユーザーが承認した後、裏で処理を再開する"""
     config: RunnableConfig = {"configurable": {"thread_id": req.thread_id}}
-    snapshot = app_graph.get_state(config)
+    snapshot = app.state.app_graph.get_state(config)
     
     if not snapshot.next or snapshot.next[0] != "tools":
         raise HTTPException(status_code=400, detail="承認待ちのタスクがありません。")
@@ -146,7 +175,7 @@ async def resume_async_endpoint(req: AsyncResumeRequest, background_tasks: Backg
 async def get_status_endpoint(thread_id: str):
     """現在の状態を確認する（ポーリング用）"""
     config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
-    snapshot = app_graph.get_state(config)
+    snapshot = app.state.app_graph.get_state(config)
     
     if not snapshot.values:
         raise HTTPException(status_code=404, detail="指定されたスレッドが見つかりません。")

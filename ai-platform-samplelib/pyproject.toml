@@ -22,7 +22,10 @@ dependencies = [
     "langgraph",
     "langchain-openai",
     "python_on_whales",
-    "tabulate"
+    "tabulate",
+    "aiosqlite",
+    "langgraph-checkpoint-sqlite",
+    "uvicorn"
 ]
 
 [tool.setuptools.packages.find]
