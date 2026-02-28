@@ -4,21 +4,174 @@ import io
 import zipfile
 import base64
 from pathlib import Path
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, Optional, List, Tuple, Deque
+import json
+import base64
+import os
+import threading
+import traceback
+from collections import deque
 
 import requests
-from dotenv import load_dotenv
-from pydantic import SecretStr
 
-from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
-from langchain_core.runnables import Runnable
 from langchain_core.messages import AIMessage, SystemMessage
 
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.prebuilt import ToolNode
+from langchain_core.messages import HumanMessage
+from langgraph.graph import MessagesState
 
-def _get_executor_base_url() -> str:
+from ..model.models import Job, jobs_lock, jobs
+from ..core.utils import JobUtils, LLMUtils
+
+def _extract_tool_payloads_from_messages(messages: List[Any]) -> List[Dict[str, Any]]:
+    """LangGraph の state.messages から tool 実行結果っぽいものを抽出する（PoC）。
+
+    ToolNode の結果は ToolMessage として入ることが多い。
+    - msg.type == "tool" かつ msg.content が JSON 文字列の場合は dict にデコードする。
+    """
+    payloads: List[Dict[str, Any]] = []
+    for msg in messages:
+        msg_type = getattr(msg, "type", None)
+        if msg_type != "tool":
+            continue
+        content = getattr(msg, "content", None)
+        if not isinstance(content, str):
+            continue
+        try:
+            val = json.loads(content)
+            if isinstance(val, dict):
+                payloads.append(val)
+        except Exception:
+            continue
+    return payloads
+
+
+def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Optional[str]) -> None:
+    """parallel_agent_workflow をバックグラウンドで実行し、jobs に途中経過/結果を格納する。"""
+
+    with jobs_lock:
+        jobs[thread_id] = Job(
+            thread_id=thread_id,
+            status="running",
+            progress={
+                "started_at": time.time(),
+                "latest_message": None,
+                "last_tool": None,
+                "stdout": None,
+                "stderr": None,
+                "server_logs": deque(maxlen=200),
+            },
+        )
+
+    try:
+
+        wf = ParallelAgentWorkflow()
+        graph = wf.create_graph().compile()
+
+        # parallel_agent_workflow 側のデフォルト分岐と合わせる
+        in_container = os.path.exists("/.dockerenv")
+        llm_base_url = os.getenv("BASE_URL") or ("http://litellm:4000/v1" if in_container else "http://localhost:4000/v1")
+        executor_base_url = get_executor_base_url()
+
+        # ユーザーがZIPを渡してきた場合は、Supervisor がツール呼び出しで使えるようパスを明示する。
+        # run_cline_executor_zip は zip_path を受け取れるので、実ファイルパスを案内すれば良い。
+        user_message = message
+        if input_zip_path:
+            user_message += (
+                "\n\n[入力ZIP]\n"
+                "ユーザーがZIPファイルをアップロードしました。必要なら `run_cline_executor_zip` を使い、"
+                "次の zip_path を指定して処理してください。\n"
+                f"zip_path: {input_zip_path}\n"
+            )
+
+        state: MessagesState = {"messages": [HumanMessage(content=user_message)]}
+
+        with jobs_lock:
+            job = jobs.get(thread_id)
+            if job:
+                JobUtils.append_server_log(job, "LangGraph stream started")
+                JobUtils.append_server_log(job, f"llm_base_url={llm_base_url}")
+                JobUtils.append_server_log(job, f"executor_base_url={executor_base_url}")
+                job.progress["llm_base_url"] = llm_base_url
+                job.progress["executor_base_url"] = executor_base_url
+
+        for event in graph.stream(state, stream_mode="values"):
+            # event は state(values) の dict を想定
+            messages = event.get("messages") if isinstance(event, dict) else None
+            if not isinstance(messages, list) or not messages:
+                continue
+
+            latest = messages[-1]
+            latest_content = getattr(latest, "content", None)
+
+            # 進捗更新
+            with jobs_lock:
+                job = jobs.get(thread_id)
+                if job:
+                    if JobUtils.get_cancel_flag(job):
+                        JobUtils.append_server_log(job, "Cancel requested. Stopping stream loop.")
+                        job.status = "cancelled"
+                        break
+                    job.progress["latest_message"] = latest_content
+
+                    tool_payloads = _extract_tool_payloads_from_messages(messages)
+                    if tool_payloads:
+                        last_tool = tool_payloads[-1]
+                        job.progress["last_tool"] = last_tool
+                        JobUtils.append_server_log(job, f"tool_result received keys={list(last_tool.keys())}")
+                        # stdout/stderr があれば status ポーリングで返せるようにコピー
+                        if "stdout" in last_tool:
+                            job.progress["stdout"] = last_tool.get("stdout")
+                        if "stderr" in last_tool:
+                            job.progress["stderr"] = last_tool.get("stderr")
+
+                        # cancel が要求されていたら executor 側にも kill を試みる
+                        if JobUtils.get_cancel_flag(job):
+                            JobUtils.try_cancel_executor_task(job)
+
+        # 最終 state を取得（stream で最後に来た event を使っても良いが、ここでは progress を採用）
+        with jobs_lock:
+            job = jobs.get(thread_id)
+            if job:
+                if JobUtils.get_cancel_flag(job):
+                    JobUtils.append_server_log(job, "LangGraph stream finished (cancelled)")
+                else:
+                    JobUtils.append_server_log(job, "LangGraph stream finished")
+            jobs[thread_id] = Job(
+                thread_id=thread_id,
+                status="cancelled" if (job and JobUtils.get_cancel_flag(job)) else "completed",
+                progress=job.progress if job else {"latest_message": None},
+                result={
+                    "thread_id": thread_id,
+                    "latest_message": job.progress.get("latest_message") if job else None,
+                    "last_tool": job.progress.get("last_tool") if job else None,
+                },
+            )
+
+    except Exception as e:
+        with jobs_lock:
+            job = jobs.get(thread_id)
+            if job:
+                JobUtils.append_server_log(job, f"ERROR: {repr(e)}")
+                JobUtils.append_server_log(job, traceback.format_exc())
+            jobs[thread_id] = Job(
+                thread_id=thread_id,
+                status="failed",
+                progress=job.progress if job else {},
+                error=repr(e),
+            )
+    finally:
+        # 入力ZIPはPoCのため、そのまま残す（必要なら削除に変更可能）
+        pass
+
+
+def start_background_thread(thread_id: str, message: str, input_zip_path: Optional[str]) -> None:
+    t = threading.Thread(target=_run_workflow_in_background, args=(thread_id, message, input_zip_path), daemon=True)
+    t.start()
+
+def get_executor_base_url() -> str:
     """Cline Executor Service のベースURLを取得する。
 
     - コンテナ内では docker-compose の extra_hosts により host.docker.internal が使える
@@ -38,9 +191,9 @@ def _get_executor_base_url() -> str:
     return "http://host.docker.internal:8000" if in_container else "http://localhost:8000"
 
 
-def _poll_status(task_id: str, timeout_sec: int) -> Dict[str, Any]:
+def poll_status(task_id: str, timeout_sec: int) -> Dict[str, Any]:
     """Cline Executor Service の /status をポーリングして完了を待つ（同期関数）"""
-    base_url = _get_executor_base_url().rstrip("/")
+    base_url = get_executor_base_url().rstrip("/")
     deadline = time.time() + timeout_sec
 
     while True:
@@ -61,9 +214,9 @@ def _poll_status(task_id: str, timeout_sec: int) -> Dict[str, Any]:
         time.sleep(1.0)
 
 
-def _download_artifacts_zip_bytes(task_id: str) -> bytes:
+def download_artifacts_zip_bytes(task_id: str) -> bytes:
     """Cline Executor Service の成果物ZIPをダウンロードして bytes で返す（同期関数）"""
-    base_url = _get_executor_base_url().rstrip("/")
+    base_url = get_executor_base_url().rstrip("/")
     res = requests.get(f"{base_url}/artifacts/{task_id}/zip", timeout=60)
     res.raise_for_status()
     return res.content
@@ -193,7 +346,7 @@ def run_cline_executor(
     """
 
     try:
-        base_url = _get_executor_base_url().rstrip("/")
+        base_url = get_executor_base_url().rstrip("/")
         payload: Dict[str, Any] = {"prompt": prompt, "timeout": timeout}
         if initial_files:
             payload["initial_files"] = initial_files
@@ -203,7 +356,7 @@ def run_cline_executor(
         task_id = res.json()["task_id"]
 
         try:
-            final_status = _poll_status(task_id, timeout_sec=timeout + 30)
+            final_status = poll_status(task_id, timeout_sec=timeout + 30)
         except Exception as e:
             return _error_result(f"Failed to poll status: {e}", task_id=task_id)
 
@@ -213,7 +366,7 @@ def run_cline_executor(
         #       将来的にはシステム全体で成果物置き場（S3/Box等）を構築し、URL参照（署名付きURL等）で
         #       受け渡す方式を検討する。
         try:
-            zip_bytes = _download_artifacts_zip_bytes(task_id)
+            zip_bytes = download_artifacts_zip_bytes(task_id)
             zip_b64 = base64.b64encode(zip_bytes).decode("ascii")
             file_list, text_previews = _inspect_zip_bytes(zip_bytes)
         except Exception as e:
@@ -257,7 +410,7 @@ def run_cline_executor_zip(
         raise ValueError("Specify exactly one of dir_path or zip_path")
 
     try:
-        base_url = _get_executor_base_url().rstrip("/")
+        base_url = get_executor_base_url().rstrip("/")
 
         if dir_path is not None:
             zip_bytes = _zip_dir_to_bytes(dir_path)
@@ -276,12 +429,12 @@ def run_cline_executor_zip(
             task_id = res.json()["task_id"]
 
             try:
-                final_status = _poll_status(task_id, timeout_sec=timeout + 30)
+                final_status = poll_status(task_id, timeout_sec=timeout + 30)
             except Exception as e:
                 return _error_result(f"Failed to poll status: {e}", task_id=task_id)
 
             try:
-                zip_bytes = _download_artifacts_zip_bytes(task_id)
+                zip_bytes = download_artifacts_zip_bytes(task_id)
                 zip_b64 = base64.b64encode(zip_bytes).decode("ascii")
                 file_list, text_previews = _inspect_zip_bytes(zip_bytes)
             except Exception as e:
@@ -316,36 +469,6 @@ tool_node = ToolNode(tools)
 # ==========================================
 # 2. Supervisor（LLM）の設定
 # ==========================================
-
-class LLMUtils:
-    @staticmethod
-    def create_llm() -> Runnable:
-        """LLMのインスタンスを生成する関数（必要に応じてカスタマイズ）"""
-        # .envファイルから環境変数を読み込む
-        load_dotenv()
-        params = {
-            "model": os.getenv("MODEL", "gpt-4o"),
-            "api_key": SecretStr(os.getenv("LITELLM_MASTER_KEY", "")),
-        }   
-
-        # NOTE: PoC では「コンテナ内実行」と「ホスト実行」が混在する。
-        #       - docker-compose 内: http://litellm:4000/v1
-        #       - ホスト実行:       http://localhost:4000/v1
-        #       環境変数 BASE_URL があれば最優先する。
-        base_url = os.getenv("BASE_URL")
-        in_container = os.path.exists("/.dockerenv")
-        if not base_url:
-            base_url = "http://litellm:4000/v1" if in_container else "http://localhost:4000/v1"
-        else:
-            # ホスト実行なのに docker-compose のサービス名 (litellm) を向いている場合は localhost に補正
-            if (not in_container) and ("//litellm:" in base_url):
-                base_url = base_url.replace("//litellm:", "//localhost:")
-        params["base_url"] = base_url
-        llm = ChatOpenAI(
-            **params
-            )
-        llm_with_tools = llm.bind_tools(tools)
-        return llm_with_tools
 
 class ParallelAgentWorkflow:
     """
