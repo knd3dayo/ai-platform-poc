@@ -1,5 +1,6 @@
 services:
   litellm:
+    restart: always
     image: ghcr.io/berriai/litellm:main-latest
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}

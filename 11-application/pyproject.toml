@@ -21,7 +21,7 @@ dependencies = [
     "fastapi",
     "langgraph-checkpoint-sqlite",
     "uvicorn",
-    "aiosqlite"
+    "aiosqlite",
 ]
 
 [tool.setuptools.packages.find]
