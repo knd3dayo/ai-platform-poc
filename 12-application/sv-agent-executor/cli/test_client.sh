@@ -1,10 +1,22 @@
 #!/bin/sh
-
-# .envファイルの読み込み
-set -a
-. ./.env
-set +a
+# 第1引数： cline または claude
+if [ "$1" = "cline" ]; then
+  echo "🚀 Starting Cline API Server..."
+    # envファイルの読み込み。
+    set -a
+    . ./.env_cline
+    set +a
+elif [ "$1" = "claude" ]; then
+  echo "🚀 Starting Claude API Server..."
+    # envファイルの読み込み。
+    set -a
+    . ./.env_claude_code
+    set +a
+else
+  echo "❌ Invalid argument. Use 'cline' or 'claude'."
+  exit 1
+fi
 
 # テストクライアントの起動スクリプト
 . ${AI_PLATFORM_LIB}/.venv/bin/activate
- python -m ai_platform_samplelib.application.super_visor.cli.main
+ python -m ai_platform_samplelib.application.super_visor.cli.main -s . test_client.shスクリプトを日本語で説明して。
