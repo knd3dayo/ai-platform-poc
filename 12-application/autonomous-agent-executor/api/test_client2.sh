@@ -1,9 +1,6 @@
 #!/bin/sh
 
-# .envファイルの読み込み
-set -a
-. ./.env
-set +a
+AI_PLATFORM_LIB=../../../ai-platform-samplelib
 
 # テストクライアントの起動スクリプト
 . ${AI_PLATFORM_LIB}/.venv/bin/activate

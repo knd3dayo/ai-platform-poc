@@ -1,9 +1,9 @@
 services:
-  cline:
+  claude:
     build:
       context: .
       dockerfile: Dockerfile
-    image: cline-executor-image
+    image: claude-code-executor-image
     stdin_open: true
     tty: true
     working_dir: /workspace
@@ -11,10 +11,9 @@ services:
       - .:/workspace
     environment:
       # ホスト側の .env から値を渡す
-      - LLM_PROVIDER=${LLM_PROVIDER}
-      - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_BASE_URL=${LLM_BASE_URL}
-      - LLM_MODEL=${LLM_MODEL}
+      - ANTHROPIC_AUTH_TOKEN=${LLM_API_KEY}
+      - ANTHROPIC_BASE_URL=${LLM_BASE_URL}
+      - ANTHROPIC_MODEL=${LLM_MODEL}
     
     cap_add:
       # iptablesの初期化にネットワークスタックへのアクセスが必要なため

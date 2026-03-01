@@ -9,7 +9,7 @@ BASE_URL = "http://localhost:7101"
 SRC_DIR = "./src"        # 送信したいソースコードがあるディレクトリ
 ZIP_NAME = "temp_project" # 作成される一時ファイル名
 
-def test_cline_zip_flow(resume_task_id=None):
+def test_autonomous_agent_zip_flow(resume_task_id=None):
     # 0. 事前準備：送信対象のディレクトリがない場合は作成（テスト用）
     if not os.path.exists(SRC_DIR):
         os.makedirs(SRC_DIR)
@@ -56,7 +56,7 @@ def test_cline_zip_flow(resume_task_id=None):
             # 新着ログを表示
             current_stdout = status_data.get("stdout") or ""
             if len(current_stdout) > last_log_len:
-                print(f"\n[Cline Log]\n{current_stdout[last_log_len:]}", end="")
+                print(f"\n[Autonomous Agent Log]\n{current_stdout[last_log_len:]}", end="")
                 last_log_len = len(current_stdout)
 
             if status in ["completed", "failed", "timeout", "cancelled"]:
@@ -86,4 +86,4 @@ def test_cline_zip_flow(resume_task_id=None):
             print(f"\n🧹 一時ファイル {zip_file_path} を削除しました。")
 
 if __name__ == "__main__":
-    test_cline_zip_flow()
+    test_autonomous_agent_zip_flow()

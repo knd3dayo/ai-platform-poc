@@ -2,6 +2,7 @@ data/
 04-dify/data/
 04-dify/docker/
 06-denodo/denodo-ai-sdk/denodo-ai-sdk
+src-updated/
 
 langgraph_state.*
 

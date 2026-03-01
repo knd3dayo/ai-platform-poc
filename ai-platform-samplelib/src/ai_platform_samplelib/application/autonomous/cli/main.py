@@ -16,7 +16,7 @@ from ..core.task_manager import TaskManager
 
 # 設定
 
-app = typer.Typer(help="Cline Executor CLI Tool")
+app = typer.Typer(help="Autonomous Agent Executor CLI Tool")
 
 
 import signal
@@ -51,7 +51,7 @@ console = Console()
 
 @app.command()
 def run(
-    prompt: str = typer.Argument(..., help="Clineへの指示内容"),
+    prompt: str = typer.Argument(..., help="自律型Agentへの指示内容"),
     src: Optional[Path] = typer.Option(None, "--src", "-s", help="送付するファイルまたはディレクトリ"),    
     task_id: Optional[str] = typer.Option(None, "--id", help="既存のタスクID（再開用）"),
     timeout: int = typer.Option(300, help="タイムアウト（秒）"),

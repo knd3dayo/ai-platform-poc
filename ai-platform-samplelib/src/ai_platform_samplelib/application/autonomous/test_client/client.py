@@ -5,7 +5,7 @@ import os
 # 設定：APIのURL
 BASE_URL = "http://localhost:7101"
 
-def test_cline_flow(resume_task_id=None):
+def test_autonomous_agent_flow(resume_task_id=None):
     print(f"🚀 1. タスクを開始します... {'(Resume: ' + resume_task_id + ')' if resume_task_id else ''}")
     
     # テストデータ
@@ -43,7 +43,7 @@ def test_cline_flow(resume_task_id=None):
         # 新しいログがあれば表示
         current_stdout = status_data.get("stdout") or ""
         if len(current_stdout) > last_log_len:
-            print(f"\n[Cline Log]\n{current_stdout[last_log_len:]}", end="")
+            print(f"\n[Autonomous Agent Log]\n{current_stdout[last_log_len:]}", end="")
             last_log_len = len(current_stdout)
 
         if status in ["completed", "failed", "timeout", "cancelled"]:
@@ -70,9 +70,9 @@ def test_cline_flow(resume_task_id=None):
 
 if __name__ == "__main__":
     # 初回実行
-    tid = test_cline_flow()
+    tid = test_autonomous_agent_flow()
     
     # 続けて、同じ task_id で「再開」をテストしたい場合は以下をアンコメント
     # time.sleep(5)
     # print("\n--- 既存のタスクIDで再実行をテストします ---")
-    # test_cline_flow(resume_task_id=tid)
+    # test_autonomous_agent_flow(resume_task_id=tid)

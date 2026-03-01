@@ -111,7 +111,6 @@ class ComposeRunner:
         ))
 
         # 5. 監視開始
-        monitor_coro = self.monitor_container(self.task_id, container, self.task_dir, timeout)
         
         if background_tasks:
             # FastAPI経由: レスポンス返却後に実行
@@ -119,6 +118,7 @@ class ComposeRunner:
         else:
             # CLIなど: イベントループでタスクを作成
             # 💡 ループ内でタスクへの参照を保持しておくと、ガベージコレクションによる消失を防げます
+            monitor_coro = self.monitor_container(self.task_id, container, self.task_dir, timeout)
             task = asyncio.create_task(monitor_coro)
             
             # CLIで --detach が指定されていない場合は、呼び出し元でこのタスクの終了を待つ設計にすると親切です
@@ -213,7 +213,7 @@ class ComposeRunner:
             runner.add_initial_files(initial_files)
 
         # 3. コマンドと実行設定
-        command_base = os.getenv('COMMAND', 'cline -y')
+        command_base = compose_config.compose_command
         command = f"{command_base} {prompt}"
         
         # 4. 実行開始（内部で launch_container と monitor_container を呼び出す）

@@ -53,7 +53,7 @@ class JobUtils:
 
     @classmethod
     def try_cancel_executor_task(cls, job: Job) -> None:
-        """tool 結果に task_id が入っていれば Cline Executor へ cancel を投げる（ベストエフォート）。"""
+        """tool 結果に task_id が入っていれば Autonomous Agent Executor へ cancel を投げる（ベストエフォート）。"""
         last_tool = job.progress.get("last_tool")
         if not isinstance(last_tool, dict):
             return

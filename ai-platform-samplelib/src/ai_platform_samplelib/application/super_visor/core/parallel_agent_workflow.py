@@ -77,12 +77,12 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
         executor_base_url = server_config.executor_base_url
 
         # ユーザーがZIPを渡してきた場合は、Supervisor がツール呼び出しで使えるようパスを明示する。
-        # run_cline_executor_zip は zip_path を受け取れるので、実ファイルパスを案内すれば良い。
+        # run_autonomous_agent_executor_zip は zip_path を受け取れるので、実ファイルパスを案内すれば良い。
         user_message = message
         if input_zip_path:
             user_message += (
                 "\n\n[入力ZIP]\n"
-                "ユーザーがZIPファイルをアップロードしました。必要なら `run_cline_executor_zip` を使い、"
+                "ユーザーがZIPファイルをアップロードしました。必要なら `run_autonomous_agent_executor_zip` を使い、"
                 "次の zip_path を指定して処理してください。\n"
                 f"zip_path: {input_zip_path}\n"
             )
@@ -173,7 +173,7 @@ def start_background_thread(thread_id: str, message: str, input_zip_path: Option
     t.start()
 
 def poll_status(task_id: str, timeout_sec: int) -> Dict[str, Any]:
-    """Cline Executor Service の /status をポーリングして完了を待つ（同期関数）"""
+    """Autonomous Agent Executor Service の /status をポーリングして完了を待つ（同期関数）"""
     base_url = ServerConfig.load_from_env().executor_base_url
     deadline = time.time() + timeout_sec
 
@@ -196,7 +196,7 @@ def poll_status(task_id: str, timeout_sec: int) -> Dict[str, Any]:
 
 
 def download_artifacts_zip_bytes(task_id: str) -> bytes:
-    """Cline Executor Service の成果物ZIPをダウンロードして bytes で返す（同期関数）"""
+    """Autonomous Agent Executor Service の成果物ZIPをダウンロードして bytes で返す（同期関数）"""
     server_config = ServerConfig.load_from_env()
     base_url = server_config.executor_base_url
     res = requests.get(f"{base_url}/artifacts/{task_id}/zip", timeout=60)
@@ -311,7 +311,7 @@ def _error_result(message: str, *, task_id: Optional[str] = None) -> Dict[str, A
 
 
 @tool
-def run_cline_executor(
+def run_autonomous_agent_executor(
     prompt: str,
     initial_files: Optional[Dict[str, str]] = None,
     timeout: int = 300,
@@ -369,11 +369,11 @@ def run_cline_executor(
             "artifacts_zip_text_previews": text_previews,
         }
     except Exception as e:
-        return _error_result(f"run_cline_executor failed: {e}")
+        return _error_result(f"run_autonomous_agent_executor failed: {e}")
 
 
 @tool
-def run_cline_executor_zip(
+def run_autonomous_agent_executor_zip(
     prompt: str,
     dir_path: Optional[str] = None,
     zip_path: Optional[str] = None,
@@ -444,10 +444,10 @@ def run_cline_executor_zip(
                 except Exception:
                     pass
     except Exception as e:
-        return _error_result(f"run_cline_executor_zip failed: {e}")
+        return _error_result(f"run_autonomous_agent_executor_zip failed: {e}")
 
 
-tools = [run_cline_executor, run_cline_executor_zip]
+tools = [run_autonomous_agent_executor, run_autonomous_agent_executor_zip]
 tool_node = ToolNode(tools)
 
 # ==========================================
@@ -478,14 +478,14 @@ class ParallelAgentWorkflow:
         sys_prompt = SystemMessage(
             content=(
                 "あなたはSupervisor Agentです。ユーザーの指示を達成するために実行計画を立て、"
-                "必要に応じて `run_cline_executor` / `run_cline_executor_zip` ツールを呼び出してください。\n"
+                "必要に応じて `run_autonomous_agent_executor` / `run_autonomous_agent_executor_zip` ツールを呼び出してください。\n"
                 "- 指示が複数の独立タスクに分解できる場合は、可能な限り *複数のツール呼び出しを同時に* 生成してください。\n"
-                "- `run_cline_executor` は時間のかかる処理です。並列実行して構いません。\n"
-                "- 次のような場合は `run_cline_executor_zip` を優先してください: \n"
+                "- `run_autonomous_agent_executor` は時間のかかる処理です。並列実行して構いません。\n"
+                "- 次のような場合は `run_autonomous_agent_executor_zip` を優先してください: \n"
                 "  - 『プロジェクト全体』『リポジトリ全体』『複数ファイル』『依存関係を見て』など、広いコンテキストが必要な依頼\n"
                 "  - バグ調査で原因箇所が不明、ログ/設定/複数モジュールの確認が必要\n"
                 "  - リファクタ、横断的な修正（型修正、import整理、設定変更など）\n"
-                "- `run_cline_executor` は少数ファイルへのピンポイント指示向きです（initial_files で必要最小限の入力を渡す）。\n"
+                "- `run_autonomous_agent_executor` は少数ファイルへのピンポイント指示向きです（initial_files で必要最小限の入力を渡す）。\n"
                 "- ツール結果の stdout/stderr を必ず確認し、失敗時は原因を踏まえて実行計画を立て直してください。\n"
                 "- ツール結果に成果物ZIPが含まれる場合（artifacts_zip_file_list / artifacts_zip_text_previews / artifacts_zip_base64）、\n"
                 "  まず中身を確認し、それに応じて必要なら追加のツール呼び出しで実行計画を立て直してください。\n"

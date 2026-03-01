@@ -68,7 +68,7 @@ async def cancel(thread_id: str) -> Job:
     NOTE:
         - LangGraph 実行を強制停止する仕組みは限定的なため、ここでは cancel フラグを立てて
           stream ループを break する（ベストエフォート）。
-        - すでに tool が Cline Executor のタスクを起動済みで task_id が取れる場合は、
+        - すでに tool が Autonomous Agent Executor のタスクを起動済みで task_id が取れる場合は、
           Executor 側 `/cancel/{task_id}` にもキャンセルを投げる。
     """
     with jobs_lock:

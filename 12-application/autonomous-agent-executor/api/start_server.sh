@@ -1,9 +1,22 @@
 #!/bin/sh
+# 第1引数： cline または claude
+if [ "$1" = "cline" ]; then
+  echo "🚀 Starting Cline API Server..."
+    # envファイルの読み込み。
+    set -a
+    . ./.env_cline
+    set +a
+elif [ "$1" = "claude" ]; then
+  echo "🚀 Starting Claude API Server..."
+    # envファイルの読み込み。
+    set -a
+    . ./.env_claude_code
+    set +a
+else
+  echo "❌ Invalid argument. Use 'cline' or 'claude'."
+  exit 1
+fi
 
-# .envファイルの読み込み
-set -a
-. ./.env
-set +a
 
 # APIサーバーの起動スクリプト
 . ${AI_PLATFORM_LIB}/.venv/bin/activate

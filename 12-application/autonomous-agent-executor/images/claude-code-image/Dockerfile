@@ -10,18 +10,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iptables \
     ipset \
     iproute2 \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. ユーザー作成 (既存のnodeユーザーを再利用して名前を変更)
+# 2. ユーザー作成 (Cline環境とUIDを1000で統一)
+# デフォルトのnodeユーザーを利用し、名前をわかりやすく変更
 RUN usermod -l codeuser node && \
     groupmod -n codeuser node && \
     usermod -d /home/codeuser -m codeuser
 
-# 3. 作業ディレクトリの作成と権限変更
+# 3. 作業ディレクトリと権限設定
 WORKDIR /workspace
 RUN chown codeuser:codeuser /workspace
 
-# 4. Clineのインストール先パス設定
+# 4. npm グローバルパスの設定
 ENV NPM_CONFIG_PREFIX=/home/codeuser/.npm-global
 ENV PATH=$PATH:/home/codeuser/.npm-global/bin
 
@@ -33,10 +34,10 @@ RUN chmod +x /usr/local/bin/init-firewall.sh /usr/local/bin/entrypoint.sh && \
     echo "codeuser ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh, /usr/sbin/chown, /usr/bin/chown" > /etc/sudoers.d/codeuser-admin && \
     chmod 0440 /etc/sudoers.d/codeuser-admin
 
-# 6. Clineのインストール
+# 6. Claude Codeのインストール
 USER codeuser
 RUN mkdir -p /home/codeuser/.npm-global && \
-    npm install -g cline
+    npm install -g @anthropic-ai/claude-code@latest
 
 ENTRYPOINT ["entrypoint.sh"]
 CMD ["/bin/bash"]

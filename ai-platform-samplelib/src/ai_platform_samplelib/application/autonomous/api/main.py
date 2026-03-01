@@ -7,7 +7,7 @@ from python_on_whales import docker as whales  # これを追加
 from fastapi import UploadFile, File, Form, FastAPI, HTTPException, BackgroundTasks
 
 from ..core.runner import ComposeRunner
-from ..model.models import ClineRequest, TaskStatus, ComposeConfig
+from ..model.models import AutonomousAgentRequest, TaskStatus, ComposeConfig
 
 
 # --- Lifespan: アプリの起動と終了のライフサイクル管理 ---
@@ -52,14 +52,14 @@ def cleanup_orphaned_containers():
         print(f"Error listing containers: {e}")
         
 # lifespan を指定してアプリを初期化
-app = FastAPI(title="Cline Executor Service", lifespan=lifespan)
+app = FastAPI(title="Autonomous Agent Executor Service", lifespan=lifespan)
 
 
 # --- API エンドポイント ---
 
 @app.post("/execute", response_model=Dict[str, str])
-async def execute_cline(
-    request: ClineRequest, background_tasks: BackgroundTasks, task_id: Optional[str] = None):
+async def execute_autonomous_agent(
+    request: AutonomousAgentRequest, background_tasks: BackgroundTasks, task_id: Optional[str] = None):
     try:
         # ロジックを完全に委譲
         compose_config = ComposeConfig.from_env()
@@ -76,7 +76,7 @@ async def execute_cline(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/execute/zip")
-async def execute_cline_zip(
+async def execute_autonomous_agent_zip(
     background_tasks: BackgroundTasks,
     task_id: Optional[str] = None,
     prompt: str = Form(...),              # JSONではなくFormで受け取る
