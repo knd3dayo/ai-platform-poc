@@ -58,13 +58,6 @@ async def status(thread_id: str) -> Job:
     if not job:
         raise HTTPException(status_code=404, detail="thread_id not found")
 
-    # deque は JSON にできないので list に変換
-    progress = dict(job.progress)
-    if isinstance(progress.get("server_logs"), deque):
-        progress["server_logs"] = list(progress["server_logs"])  # type: ignore[assignment]
-
-    job.progress = progress  # 変換後の progress を job に戻す（キャンセルフラグなどを保持するため）
-
     return job
 
 

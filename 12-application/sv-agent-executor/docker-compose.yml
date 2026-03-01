@@ -16,6 +16,13 @@ services:
     
     environment:
       - PYTHONUNBUFFERED=1
+      # .env ファイルの内容も環境変数として渡す（必要に応じて個別に指定しても良い）
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o}
+      - LLM_API_KEY=${LLM_API_KEY:?LLM_API_KEYが未設定です}
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      - EXECUTOR_BASE_URL=${EXECUTOR_BASE_URL:-}
+
     ports:
       - "7201:7201"
     
