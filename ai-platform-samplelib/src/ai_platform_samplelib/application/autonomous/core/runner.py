@@ -110,9 +110,20 @@ class ComposeRunner:
             container_id=container.id,
         ))
 
-        # 5. 監視開始（非同期タスクとして実行） 
+        # 5. 監視開始
+        monitor_coro = self.monitor_container(self.task_id, container, self.task_dir, timeout)
+        
         if background_tasks:
+            # FastAPI経由: レスポンス返却後に実行
             background_tasks.add_task(self.monitor_container, self.task_id, container, self.task_dir, timeout)
+        else:
+            # CLIなど: イベントループでタスクを作成
+            # 💡 ループ内でタスクへの参照を保持しておくと、ガベージコレクションによる消失を防げます
+            task = asyncio.create_task(monitor_coro)
+            
+            # CLIで --detach が指定されていない場合は、呼び出し元でこのタスクの終了を待つ設計にすると親切です
+            # (現在は create_task なので、この run メソッド自体は即座に task_id を返します)
+
         return self.task_id
 
 

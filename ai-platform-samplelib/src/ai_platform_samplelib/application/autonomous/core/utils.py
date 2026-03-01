@@ -1,8 +1,9 @@
 import os
 import io
 import pathlib
+import io
 import zipfile
-
+from typing import Union
 from fastapi import UploadFile, HTTPException
 
 class ExecutorUtil:
@@ -37,15 +38,25 @@ class ExecutorUtil:
         return out.decode("utf-8", errors="replace"), err.decode("utf-8", errors="replace")
 
     @staticmethod
-    def extract_zip_to_dir(zip_file: UploadFile, dest_dir: pathlib.Path) -> None:
-        """アップロードされた ZIP ファイルを指定ディレクトリに展開します。"""
-        contents = zip_file.file.read()
+    def extract_zip_to_dir(zip_file: Union[UploadFile, pathlib.Path], dest_dir: pathlib.Path) -> None:
+        """UploadFile(API) または Path(CLI) から ZIP を展開します。"""
+        
+        # 1. バイナリデータの取得
+        if isinstance(zip_file, pathlib.Path):
+            # CLIの場合: Pathオブジェクトから直接読み込む
+            with open(zip_file, "rb") as f:
+                contents = f.read()
+        else:
+            # APIの場合: UploadFileから読み込む
+            # ※同期的なread()を想定（非同期の場合は await が必要だが、通常 utils は同期的に書くことが多い）
+            contents = zip_file.file.read()
+
+        # 2. ZIPの展開
         with zipfile.ZipFile(io.BytesIO(contents)) as zip_ref:
-            # セキュリティチェック（Zip Slip 対策）
+            # Zip Slip 対策: 展開先が dest_dir の外に出ないかチェック
             for member in zip_ref.namelist():
-                target_path = os.path.normpath(os.path.join(dest_dir, member))
-                if not target_path.startswith(os.path.abspath(dest_dir)):
-                    raise HTTPException(status_code=400, detail="不正なファイルパスがZIPに含まれています")
+                member_path = dest_dir / member
+                if not str(member_path.resolve()).startswith(str(dest_dir.resolve())):
+                    raise Exception(f"Unsafe zip member detected: {member}")
+            
             zip_ref.extractall(dest_dir)
-
-
