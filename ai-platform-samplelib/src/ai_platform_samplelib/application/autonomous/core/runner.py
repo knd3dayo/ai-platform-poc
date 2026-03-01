@@ -13,7 +13,7 @@ from fastapi import UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 from python_on_whales import docker as whales, Container, DockerClient
-from .model import TaskStatus, ComposeConfig
+from ..model.models import TaskStatus, ComposeConfig
 from .utils import ExecutorUtil
 from .task_manager import TaskManager
 

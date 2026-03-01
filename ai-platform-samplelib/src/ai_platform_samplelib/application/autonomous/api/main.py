@@ -7,7 +7,7 @@ from python_on_whales import docker as whales  # これを追加
 from fastapi import UploadFile, File, Form, FastAPI, HTTPException, BackgroundTasks
 
 from ..core.runner import ComposeRunner
-from ..core.model import ClineRequest, TaskStatus, ComposeConfig
+from ..model.models import ClineRequest, TaskStatus, ComposeConfig
 
 
 # --- Lifespan: アプリの起動と終了のライフサイクル管理 ---

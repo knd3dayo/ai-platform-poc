@@ -28,35 +28,17 @@ tool_node = ToolNode(tools)
 # ==========================================
 # 先ほど構築したLiteLLMのゲートウェイを向くように設定します
 
-from pydantic import SecretStr
-from dotenv import load_dotenv
+from .utils import JobUtils, LLMUtils
 
 class LangGraphWorkflowTest1:
     thread_id: str
     message: str
 
-    @staticmethod
-    def create_llm() -> Runnable:
-        """LLMのインスタンスを生成する関数（必要に応じてカスタマイズ）"""
-        # .envファイルから環境変数を読み込む
-        load_dotenv()
-        params = {
-            "model": os.getenv("MODEL", "gpt-4o"),
-            "api_key": SecretStr(os.getenv("LITELLM_MASTER_KEY", "")),
-        }   
-        base_url = os.getenv("BASE_URL")
-        if base_url:
-            params["base_url"] = base_url
-        llm = ChatOpenAI(
-            **params
-            )
-        llm_with_tools = llm.bind_tools(tools)
-        return llm_with_tools
 
     @staticmethod
     def supervisor_agent(state: MessagesState):
         """ユーザーの指示を受け取り、ツールを使うべきか判断するノード"""
-        llm = LangGraphWorkflowTest1.create_llm()
+        llm = LLMUtils.create_llm()
         # 【追加】LLMに役割と許可を与えるシステムプロンプト
         sys_prompt = SystemMessage(
             content="あなたは社内検証用のシステムアシスタントです。"

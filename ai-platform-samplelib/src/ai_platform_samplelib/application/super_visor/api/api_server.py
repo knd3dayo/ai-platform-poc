@@ -3,11 +3,11 @@ import time
 from collections import deque
 import tempfile
 import uuid
-from typing import Any, Dict, Optional, List, Deque
+from typing import Optional
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, UploadFile, File, Form
 
-from ..core.models import Job, jobs_lock, jobs
+from ..model.models import Job, jobs_lock, jobs
 from ..core.utils import JobUtils
 from ..core.parallel_agent_workflow import start_background_thread
 
@@ -23,7 +23,7 @@ async def submit(
     background_tasks: BackgroundTasks,
     message: str = Form(...),
     file: Optional[UploadFile] = File(None),
-):
+) -> Job:
     """ユーザーからの質問（+ 任意ZIP）を受け取り、バックグラウンドで処理を開始する。"""
 
     thread_id = str(uuid.uuid4())
@@ -42,11 +42,11 @@ async def submit(
     # FastAPI の BackgroundTasks で「スレッド起動」を遅延実行
     background_tasks.add_task(start_background_thread, thread_id, message, input_zip_path)
 
-    return {"thread_id": thread_id, "status": "queued"}
+    return jobs[thread_id]
 
 
 @app.get("/api/status/{thread_id}")
-async def status(thread_id: str):
+async def status(thread_id: str) -> Job:
     """ジョブの進捗を返す。
 
     - parallel_agent_workflow の tool 実行結果（stdout/stderr/成果物ZIPのbase64等）が
@@ -63,17 +63,13 @@ async def status(thread_id: str):
     if isinstance(progress.get("server_logs"), deque):
         progress["server_logs"] = list(progress["server_logs"])  # type: ignore[assignment]
 
-    return {
-        "thread_id": job.thread_id,
-        "status": job.status,
-        "progress": progress,
-        "result": job.result,
-        "error": job.error,
-    }
+    job.progress = progress  # 変換後の progress を job に戻す（キャンセルフラグなどを保持するため）
+
+    return job
 
 
 @app.delete("/api/cancel/{thread_id}")
-async def cancel(thread_id: str):
+async def cancel(thread_id: str) -> Job:
     """ジョブのキャンセル要求を受け付ける。
 
     NOTE:
@@ -91,7 +87,7 @@ async def cancel(thread_id: str):
         JobUtils.append_server_log(job, "Cancel requested via API")
         JobUtils.try_cancel_executor_task(job)
 
-    return {"thread_id": thread_id, "status": "cancel_requested"}
+    return job
 
 
 if __name__ == "__main__":

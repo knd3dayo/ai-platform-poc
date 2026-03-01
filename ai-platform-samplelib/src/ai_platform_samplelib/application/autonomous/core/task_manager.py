@@ -1,7 +1,7 @@
 from typing import Optional, ClassVar
 import os, pathlib
 
-from .model import TaskStatus
+from ..model.models import TaskStatus
 
 # --- 設定：環境に合わせて調整 ---
 HOST_PROJECTS_ROOT = os.getenv("HOST_PROJECTS_ROOT", "/home/user/ai-platform/data/projects")

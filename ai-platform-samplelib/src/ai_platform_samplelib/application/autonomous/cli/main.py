@@ -10,7 +10,7 @@ import shutil
 
 # 内部パッケージのインポート
 from ..core.runner import ComposeRunner
-from ..core.model import TaskStatus, ComposeConfig
+from ..model.models import TaskStatus, ComposeConfig
 from ..core.task_manager import TaskManager
 
 # 設定

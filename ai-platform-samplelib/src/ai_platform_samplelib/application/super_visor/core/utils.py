@@ -9,7 +9,7 @@ from langchain_core.runnables import Runnable
 from pydantic import SecretStr
 
 
-from ..model.models import Job, jobs_lock
+from ..model.models import Job, jobs_lock, jobs, ServerConfig
 
 
 class LLMUtils:
@@ -17,25 +17,15 @@ class LLMUtils:
     def create_llm() -> Runnable:
         """LLMのインスタンスを生成する関数（必要に応じてカスタマイズ）"""
         # .envファイルから環境変数を読み込む
-        load_dotenv()
+        server_config = ServerConfig.load_from_env()
         params = {
-            "model": os.getenv("MODEL", "gpt-4o"),
-            "api_key": SecretStr(os.getenv("LITELLM_MASTER_KEY", "")),
-        }   
-
-        # NOTE: PoC では「コンテナ内実行」と「ホスト実行」が混在する。
-        #       - docker-compose 内: http://litellm:4000/v1
-        #       - ホスト実行:       http://localhost:4000/v1
-        #       環境変数 BASE_URL があれば最優先する。
-        base_url = os.getenv("BASE_URL")
-        in_container = os.path.exists("/.dockerenv")
-        if not base_url:
-            base_url = "http://litellm:4000/v1" if in_container else "http://localhost:4000/v1"
-        else:
-            # ホスト実行なのに docker-compose のサービス名 (litellm) を向いている場合は localhost に補正
-            if (not in_container) and ("//litellm:" in base_url):
-                base_url = base_url.replace("//litellm:", "//localhost:")
-        params["base_url"] = base_url
+            "model": server_config.llm_model,
+            "api_key": SecretStr(server_config.llm_api_key or ""),
+        }
+        if server_config.llm_base_url:
+            base_url = server_config.llm_base_url
+            params["base_url"] = base_url
+        
         llm = ChatOpenAI(
             **params
             )

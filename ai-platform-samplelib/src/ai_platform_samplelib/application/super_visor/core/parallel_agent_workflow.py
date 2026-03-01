@@ -14,6 +14,7 @@ from collections import deque
 
 import requests
 
+
 from langchain_core.tools import tool
 from langchain_core.messages import AIMessage, SystemMessage
 
@@ -22,7 +23,7 @@ from langgraph.prebuilt import ToolNode
 from langchain_core.messages import HumanMessage
 from langgraph.graph import MessagesState
 
-from ..model.models import Job, jobs_lock, jobs
+from ..model.models import ServerConfig, Job, jobs_lock, jobs
 from ..core.utils import JobUtils, LLMUtils
 
 def _extract_tool_payloads_from_messages(messages: List[Any]) -> List[Dict[str, Any]]:
@@ -69,11 +70,11 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
 
         wf = ParallelAgentWorkflow()
         graph = wf.create_graph().compile()
+        server_config = ServerConfig.load_from_env()
 
         # parallel_agent_workflow 側のデフォルト分岐と合わせる
-        in_container = os.path.exists("/.dockerenv")
-        llm_base_url = os.getenv("BASE_URL") or ("http://litellm:4000/v1" if in_container else "http://localhost:4000/v1")
-        executor_base_url = get_executor_base_url()
+        llm_base_url = server_config.llm_base_url 
+        executor_base_url = server_config.executor_base_url
 
         # ユーザーがZIPを渡してきた場合は、Supervisor がツール呼び出しで使えるようパスを明示する。
         # run_cline_executor_zip は zip_path を受け取れるので、実ファイルパスを案内すれば良い。
@@ -171,29 +172,9 @@ def start_background_thread(thread_id: str, message: str, input_zip_path: Option
     t = threading.Thread(target=_run_workflow_in_background, args=(thread_id, message, input_zip_path), daemon=True)
     t.start()
 
-def get_executor_base_url() -> str:
-    """Cline Executor Service のベースURLを取得する。
-
-    - コンテナ内では docker-compose の extra_hosts により host.docker.internal が使える
-    - ホスト実行なら localhost を使う
-    """
-    # NOTE:
-    # - 環境変数が指定されていれば最優先
-    # - 未指定の場合は、実行環境がコンテナ内かどうかでデフォルトを分岐する
-    #   - コンテナ内: host.docker.internal
-    #   - ホスト: localhost
-    env = os.getenv("CLINE_EXECUTOR_BASE_URL")
-    if env:
-        return env
-
-    # ざっくりコンテナ判定
-    in_container = os.path.exists("/.dockerenv")
-    return "http://host.docker.internal:8000" if in_container else "http://localhost:8000"
-
-
 def poll_status(task_id: str, timeout_sec: int) -> Dict[str, Any]:
     """Cline Executor Service の /status をポーリングして完了を待つ（同期関数）"""
-    base_url = get_executor_base_url().rstrip("/")
+    base_url = ServerConfig.load_from_env().executor_base_url
     deadline = time.time() + timeout_sec
 
     while True:
@@ -216,7 +197,8 @@ def poll_status(task_id: str, timeout_sec: int) -> Dict[str, Any]:
 
 def download_artifacts_zip_bytes(task_id: str) -> bytes:
     """Cline Executor Service の成果物ZIPをダウンロードして bytes で返す（同期関数）"""
-    base_url = get_executor_base_url().rstrip("/")
+    server_config = ServerConfig.load_from_env()
+    base_url = server_config.executor_base_url
     res = requests.get(f"{base_url}/artifacts/{task_id}/zip", timeout=60)
     res.raise_for_status()
     return res.content
@@ -345,8 +327,9 @@ def run_cline_executor(
         LangGraph の ToolNode は同期実行パスを通ることがあるため、このツールは同期関数にしている。
     """
 
+    server_config = ServerConfig.load_from_env()
     try:
-        base_url = get_executor_base_url().rstrip("/")
+        base_url = server_config.executor_base_url
         payload: Dict[str, Any] = {"prompt": prompt, "timeout": timeout}
         if initial_files:
             payload["initial_files"] = initial_files
@@ -405,12 +388,13 @@ def run_cline_executor_zip(
     2) multipart/form-data で POST /execute/zip
     3) GET /status/{task_id} を完了までポーリング
     """
+    server_config = ServerConfig.load_from_env()  # 先にロードしておいて、エラーがあれば早めに返す  
 
     if (dir_path is None and zip_path is None) or (dir_path is not None and zip_path is not None):
         raise ValueError("Specify exactly one of dir_path or zip_path")
 
     try:
-        base_url = get_executor_base_url().rstrip("/")
+        base_url = server_config.executor_base_url
 
         if dir_path is not None:
             zip_bytes = _zip_dir_to_bytes(dir_path)
