@@ -1,35 +1,28 @@
 services:
-
-  langgraph_async_app:
-    # FastMCP(=MCPサーバー) を uv で起動する軽量コンテナ
-    image: ghcr.io/astral-sh/uv:python3.11-bookworm-slim
+  sv-agent-server:
+    build:
+      # ビルドの基準点
+      context: ${AI_PLATFORM_LIB:?AI_PLATFORM_LIBが未設定です}
+      # 基準点から見たDockerfileのパス
+      dockerfile: Dockerfile
+    
+    # --- ここから下は build の「中」ではなく「外」に書きます ---
+    image: ai-platform-samplelib-base    
     working_dir: /app
+    
     volumes:
-      # プロジェクト一式をマウント（pyproject.toml/uv.lock/src を利用）
-      - ./:/app
-      # 仮想環境は named volume に作ってホストを汚しにくくする
-      - langgraph_app_venv:/app/.venv
+      # ソースコードを同期（Dockerfile内の COPY を上書きして開発しやすくする）
+      - "${AI_PLATFORM_LIB}:/app"
+    
     environment:
       - PYTHONUNBUFFERED=1
-      - LITELLM_LOG=DEBUG
     ports:
-      - "5202:5202"
-    extra_hosts:
-      - "host.docker.internal:host-gateway" # これを追加
-    # 起動時に依存解決→MCPサーバー起動
-    command:
-      - /bin/sh
-      - -lc
-      - |
-          uv sync --frozen
-          uv run -m ai_platform_langfraph_app.async_api_server -p 5202
-
+      - "7201:7201"
+    
+    # 起動コマンド（uv run で安全にモジュール実行）
+    command: ["uv", "run", "-m", "ai_platform_samplelib.application.super_visor.api.api_server"]
 
 networks:
   default:
     name: ai_platform_net
     external: true
-
-
-volumes:
-  langgraph_app_venv:

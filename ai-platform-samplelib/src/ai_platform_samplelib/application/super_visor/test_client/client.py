@@ -11,12 +11,12 @@
 
 Usage:
     # ZIPなし
-    uv run --active python -m ai_platform_langghraph_app.client --message "hello" \
-        --api-url http://localhost:5202
+    uv run --active python -m ai_platform_samplelib.application.super_visor.test_client.client --message "hello" \
+        --api-url http://localhost:7201
 
     # ZIPあり
-    uv run --active python -m ai_platform_langghraph_app.client --message "このZIPを見て" \
-        --zip-path ./project.zip --api-url http://localhost:5202
+    uv run --active python -m ai_platform_samplelib.application.super_visor.test_client.client --message "このZIPを見て" \
+        --zip-path ./project.zip --api-url http://localhost:7201
 """
 
 from __future__ import annotations
@@ -78,7 +78,7 @@ def cancel_job(api_url: str, thread_id: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="SV Agent Executor API test client")
-    parser.add_argument("--api-url", default="http://localhost:5202", help="SV Agent Executor API base url")
+    parser.add_argument("--api-url", default="http://localhost:7201", help="SV Agent Executor API base url")
     parser.add_argument("--message", required=True, help="user message")
     parser.add_argument("--zip-path", default=None, help="optional zip file path")
     parser.add_argument("--poll-interval", type=float, default=1.0)

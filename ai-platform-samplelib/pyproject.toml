@@ -24,8 +24,10 @@ dependencies = [
     "python_on_whales",
     "tabulate",
     "aiosqlite",
+    "langgraph-checkpoint",
     "langgraph-checkpoint-sqlite",
-    "uvicorn"
+    "uvicorn",
+    "docker"
 ]
 
 [tool.setuptools.packages.find]

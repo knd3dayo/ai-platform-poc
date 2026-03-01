@@ -5,7 +5,7 @@ import time
 import pathlib
 
 # 設定
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:7101"
 SRC_DIR = "./src"        # 送信したいソースコードがあるディレクトリ
 ZIP_NAME = "temp_project" # 作成される一時ファイル名
 

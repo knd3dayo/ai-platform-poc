@@ -2,6 +2,9 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
 WORKDIR /app
 
+# 【ここがポイント】仮想環境の作成場所をマウントされない場所（例: /opt/venv）に固定する
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+
 # 1. 依存関係の定義ファイルだけを先にコピー
 COPY pyproject.toml uv.lock ./
 

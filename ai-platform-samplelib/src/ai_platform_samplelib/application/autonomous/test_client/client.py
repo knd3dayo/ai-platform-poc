@@ -3,7 +3,7 @@ import time
 import os
 
 # 設定：APIのURL
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:7101"
 
 def test_cline_flow(resume_task_id=None):
     print(f"🚀 1. タスクを開始します... {'(Resume: ' + resume_task_id + ')' if resume_task_id else ''}")

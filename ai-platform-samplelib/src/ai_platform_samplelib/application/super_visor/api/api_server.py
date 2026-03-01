@@ -7,9 +7,9 @@ from typing import Any, Dict, Optional, List, Deque
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, UploadFile, File, Form
 
-from ..model.models import Job, jobs_lock, jobs
+from ..core.models import Job, jobs_lock, jobs
 from ..core.utils import JobUtils
-from ..core.parallel_agent_workflow import ToolNode, run_cline_executor, run_cline_executor_zip, start_background_thread
+from ..core.parallel_agent_workflow import start_background_thread
 
 app = FastAPI(title="SV Agent Executor API")
 
@@ -99,6 +99,6 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="SV Agent Executor API Server")
-    parser.add_argument("-p", "--port", type=int, default=5202, help="Port to run the API server on (default: 5202)")
+    parser.add_argument("-p", "--port", type=int, default=7201, help="Port to run the API server on (default: 7201)")
     args = parser.parse_args()
     uvicorn.run(app, host="0.0.0.0", port=args.port)

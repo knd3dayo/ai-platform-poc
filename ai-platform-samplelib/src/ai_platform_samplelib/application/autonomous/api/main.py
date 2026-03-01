@@ -117,7 +117,7 @@ def main():
     # 引数でcomposeプロジェクトディレクトリ、ファイルを指定できるようにする
     import argparse
     parser = argparse.ArgumentParser(description="Docker Compose Runner API Server")
-    parser.add_argument("-p", "--port", type=int, default=8000, help="Port to run the API server on")
+    parser.add_argument("-p", "--port", type=int, default=7101, help="Port to run the API server on")
     # -e --env-file オプションを追加して、環境変数ファイルを指定できるようにする
     parser.add_argument("-e", "--env-file", type=str, default=".env", help="Path to the .env file for configuration")
 
