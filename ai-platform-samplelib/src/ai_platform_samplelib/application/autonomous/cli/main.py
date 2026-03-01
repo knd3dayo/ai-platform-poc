@@ -61,26 +61,10 @@ def run(
 
 
     """新しいタスクを実行し、ログ表示・エラー色分け・完了後の同期を行います。"""
-    ComposeRunner.load_tasks()
+    TaskManager.load_tasks()
     
     async def _execute():
         config = ComposeConfig.from_env()
-
-        # --- ファイル準備ロジック ---
-        zip_to_send = None
-        temp_used = False
-        
-        if src and src.exists():
-            if src.is_dir():
-                console.print(f"📦 ディレクトリ [cyan]{src}[/cyan] をZIP化しています...")
-                zip_to_send = create_temporary_zip(src)
-                temp_used = True
-            elif src.suffix == ".zip":
-                zip_to_send = src
-            else:
-                # 単一ファイルの場合もZIPに包むか、既存の initial_files ロジックに流す
-                # ここでは汎用性のためにZIP化を推奨
-                pass
 
         params = {
             "background_tasks": None,  # CLIモードでは直接 await するため BackgroundTasks は使用しない
@@ -89,13 +73,13 @@ def run(
             "task_id": task_id,
             "timeout": timeout
         }
-        if zip_to_send:
-            params["zip_file"] = zip_to_send
+        if src and src.exists():
+            params["source_path"] = src
 
         tid = await ComposeRunner.create_and_run(
             **params
         )
-        ComposeRunner.save_tasks()
+        TaskManager.save_tasks()
         console.print(f"[bold green]🚀 タスクを開始しました: {tid}[/bold green]")
 
         if detach:
@@ -171,15 +155,15 @@ def run(
                 except Exception as e:
                     console.print(f"[bold red]❌ 同期中にエラーが発生しました: {e}[/bold red]")
 
-        ComposeRunner.save_tasks()
+        TaskManager.save_tasks()
 
     asyncio.run(_execute())
 
 @app.command(name="list")
 def list_tasks():
     """タスクの一覧を表示します。"""
-    ComposeRunner.load_tasks()
-    tasks = ComposeRunner.get_all_tasks()
+    TaskManager.load_tasks()
+    tasks = TaskManager.get_all_tasks()
     if not tasks:
         typer.echo("タスクは見つかりませんでした。")
         return

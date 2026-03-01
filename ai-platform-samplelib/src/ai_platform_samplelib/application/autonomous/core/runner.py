@@ -1,13 +1,12 @@
 from typing import Dict, Optional, cast, ClassVar
 from datetime import datetime
-import os
 import uuid
 import pathlib
 import tempfile
 import asyncio
-import json
 import shlex
 from datetime import datetime
+import shutil
 
 from fastapi import UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
@@ -17,6 +16,9 @@ from ..model.models import TaskStatus, ComposeConfig
 from .utils import ExecutorUtil
 from .task_manager import TaskManager
 
+from ai_platform_samplelib.util.logging import get_application_logger
+
+logger = get_application_logger()
 
 class ComposeRunner:
     """docker-compose.yml から設定を動的に読み取り、コンテナを実行するクラス"""
@@ -36,6 +38,23 @@ class ComposeRunner:
             compose_project_name=f"task_{self.task_id}"
         )
 
+    def prepare_workspace(self, 
+                          initial_files: Optional[Dict[str, str]] = None, 
+                          zip_file: Optional[UploadFile] = None, 
+                          source_path: Optional[pathlib.Path] = None):
+        """入力ソースに関わらずワークスペースを準備する（共通化）"""
+        if zip_file:
+            ExecutorUtil.extract_zip_to_dir(zip_file, self.task_dir)
+        if initial_files:
+            for name, content in initial_files.items():
+                (self.task_dir / name).write_text(content, encoding='utf-8')
+        if source_path and source_path.exists():
+            # ディレクトリなら中身を、ファイルならそのものをコピー
+            if source_path.is_dir():
+                shutil.copytree(source_path, self.task_dir, dirs_exist_ok=True)
+            else:
+                shutil.copy2(source_path, self.task_dir)
+
     def add_initial_files(self, initial_files: Dict[str, str] | None):
         """初期ファイルを task_dir に配置します。"""
         if not initial_files:
@@ -46,6 +65,17 @@ class ComposeRunner:
     def add_zip_file(self, zip_file: UploadFile):
         """アップロードされた ZIP ファイルを task_dir に展開します。"""
         ExecutorUtil.extract_zip_to_dir(zip_file, self.task_dir)
+
+    def add_files_from_path(self, src_path: pathlib.Path):
+        """src_path のファイルを task_dir にコピーします。"""
+        if src_path.is_file():
+            shutil.copy(src_path, self.task_dir / src_path.name)
+        elif src_path.is_dir():
+            for item in src_path.rglob('*'):
+                if item.is_file():
+                    dest = self.task_dir / item.relative_to(src_path)
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy(item, dest)
 
     def launch_container(self, command: str = "", volumes: list = [], env: dict = {}):
         """
@@ -194,6 +224,7 @@ class ComposeRunner:
         prompt: str,
         initial_files: Optional[Dict[str, str]] = None,
         zip_file: Optional[UploadFile] = None,
+        source_path: Optional[pathlib.Path] = None,
         task_id: Optional[str] = None,
         timeout: int = 300
     ) -> str:
@@ -206,11 +237,11 @@ class ComposeRunner:
             compose_config=compose_config
         )
 
-        # 2. ファイルの配置（ZIPまたは初期ファイル）
-        if zip_file:
-            runner.add_zip_file(zip_file)
-        if initial_files:
-            runner.add_initial_files(initial_files)
+        runner.prepare_workspace(
+            initial_files=initial_files,
+            zip_file=zip_file,
+            source_path=source_path
+        )        # 2. ファイルの配置（ZIPまたは初期ファイル）
 
         # 3. コマンドと実行設定
         command_base = compose_config.compose_command
@@ -298,31 +329,3 @@ class ComposeRunner:
         )
 
 
-    @classmethod
-    def save_tasks(cls):
-        """現在のタスク状態をファイルに保存する"""
-        with open(TaskManager.get_tasks_file_path(), "w") as f:
-            data = {k: v.model_dump(mode='json') for k, v in TaskManager.get_all_tasks().items()}
-            json.dump(data, f, indent=2)
-
-    @classmethod
-    def load_tasks(cls):
-        """ファイルからタスク状態を復元する"""
-        if TaskManager.get_tasks_file_path().exists():
-            with open(TaskManager.get_tasks_file_path(), "r") as f:
-                data = json.load(f)
-                for k, v in data.items():
-                    TaskManager.upsert_task(k, TaskStatus(**v))
-
-    @classmethod
-    def get_task(cls, task_id: str):
-        """タスクIDからタスク情報を取得する"""
-        task = TaskManager.get_all_tasks().get(task_id)
-        if not task:
-            raise HTTPException(status_code=404, detail="Task not found")
-        return task
-    
-    @classmethod
-    def get_all_tasks(cls):
-        """全タスクの情報を取得する"""
-        return TaskManager.get_all_tasks()

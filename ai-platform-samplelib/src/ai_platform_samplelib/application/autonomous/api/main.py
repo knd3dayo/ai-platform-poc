@@ -63,10 +63,12 @@ async def execute_autonomous_agent(
     try:
         # ロジックを完全に委譲
         compose_config = ComposeConfig.from_env()
+        
         new_task_id = await ComposeRunner.create_and_run(
             background_tasks=background_tasks,
             compose_config=compose_config,
             prompt=request.prompt,
+            # initial_filesをtask_dirに保存する。
             initial_files=request.initial_files,
             task_id=task_id,
             timeout=request.timeout
@@ -89,6 +91,7 @@ async def execute_autonomous_agent_zip(
             compose_config=compose_config,
             background_tasks=background_tasks,
             prompt=prompt,
+            # ZIPファイルを task_dir に保存してから runner に渡す
             zip_file=file,
             task_id=task_id,
             timeout=timeout

@@ -1,5 +1,6 @@
 from typing import Optional, ClassVar
 import os, pathlib
+import json
 
 from ..model.models import TaskStatus
 
@@ -36,3 +37,19 @@ class TaskManager:
     def remove_task(cls, task_id: str):
         if task_id in cls.tasks:
             del cls.tasks[task_id]
+
+    @classmethod
+    def save_tasks(cls):
+        """現在のタスク状態をファイルに保存する"""
+        with open(TaskManager.get_tasks_file_path(), "w") as f:
+            data = {k: v.model_dump(mode='json') for k, v in TaskManager.get_all_tasks().items()}
+            json.dump(data, f, indent=2)
+
+    @classmethod
+    def load_tasks(cls):
+        """ファイルからタスク状態を復元する"""
+        if TaskManager.get_tasks_file_path().exists():
+            with open(TaskManager.get_tasks_file_path(), "r") as f:
+                data = json.load(f)
+                for k, v in data.items():
+                    TaskManager.upsert_task(k, TaskStatus(**v))
