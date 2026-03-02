@@ -5,9 +5,25 @@ import io
 import zipfile
 from typing import Union
 from fastapi import UploadFile, HTTPException
+import zipfile
+import tempfile
+from pathlib import Path
+import atexit
 
 class ExecutorUtil:
     """タスクの実行と管理に関するユーティリティ関数をまとめたクラスです。"""
+    @staticmethod
+    def create_temporary_zip(source_dir: Path) -> Path:
+        """ディレクトリを一時的なZIPファイルに固める"""
+        tmp_zip = Path(tempfile.NamedTemporaryFile(suffix=".zip", delete=False).name)
+        atexit.register(lambda: tmp_zip.unlink(missing_ok=True))  # 終了時に自動削除
+        with zipfile.ZipFile(tmp_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for file in source_dir.rglob('*'):
+                if file.is_file():
+                    # source_dir からの相対パスで格納
+                    zf.write(file, file.relative_to(source_dir))
+        return tmp_zip
+
     @staticmethod
     def make_zip_from_dir(src_dir: pathlib.Path, zip_path: pathlib.Path) -> None:
         """ディレクトリ全体をzip化します（zip_path は上書き）。"""

@@ -27,25 +27,11 @@ import typer
 from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
-from rich.panel import Panel
 
 
-import zipfile
-import tempfile
 import shutil
 from pathlib import Path
-import atexit
 
-def create_temporary_zip(source_dir: Path) -> Path:
-    """ディレクトリを一時的なZIPファイルに固める"""
-    tmp_zip = Path(tempfile.NamedTemporaryFile(suffix=".zip", delete=False).name)
-    atexit.register(lambda: tmp_zip.unlink(missing_ok=True))  # 終了時に自動削除
-    with zipfile.ZipFile(tmp_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for file in source_dir.rglob('*'):
-            if file.is_file():
-                # source_dir からの相対パスで格納
-                zf.write(file, file.relative_to(source_dir))
-    return tmp_zip
 
 console = Console()
 
@@ -164,6 +150,7 @@ def list_tasks():
     """タスクの一覧を表示します。"""
     TaskManager.load_tasks()
     tasks = TaskManager.get_all_tasks()
+
     if not tasks:
         typer.echo("タスクは見つかりませんでした。")
         return

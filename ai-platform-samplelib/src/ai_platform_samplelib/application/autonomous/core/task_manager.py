@@ -53,3 +53,5 @@ class TaskManager:
                 data = json.load(f)
                 for k, v in data.items():
                     TaskManager.upsert_task(k, TaskStatus(**v))
+
+    
