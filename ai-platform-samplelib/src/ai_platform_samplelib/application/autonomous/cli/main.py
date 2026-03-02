@@ -10,7 +10,7 @@ from .typer_actions import TyperActions
 
 # --- CLI Layer: コマンドの定義 ---
 actions = TyperActions()
-service = TaskService(actions)
+service = TaskService()
 app = typer.Typer(help="Autonomous Agent Executor CLI Tool")
 
 @app.command()
@@ -19,17 +19,30 @@ def run(
     src: Optional[Path] = typer.Option(None, "--src", "-s"),
     task_id: Optional[str] = typer.Option(None, "--id"),
     timeout: int = 300,
-    detach: bool = False,
+    wait: bool = True,
     dest: Path = typer.Option("./src-updated", help="成果物の同期先ディレクトリ"),
 ):
     """新しいタスクを実行します。"""
     TaskManager.load_tasks()
-    asyncio.run(service.run_task(prompt, src, task_id, timeout, dest, detach))
+    async def main():
+        async for status in service.run_task(prompt, src, task_id, timeout, dest, wait):
+            if status.sub_status == "starting":
+                actions.after_start_task_action(status.task_id)
+            elif status.sub_status == "running-background":
+                actions.after_start_detach_task_action(status.task_id)
+                break  # バックグラウンドで走らせる場合はここでループを抜ける
+            elif status.status == "completed":
+                actions.after_complete_action(status.task_id, dest)
+                break  # 完了したらループを抜ける
+            
+            await actions.progress_action(status.task_id)    
+        
+    asyncio.run(main())
 
 @app.command(name="list")
 def list_tasks():
     """一覧表示"""
-    service.list_tasks()
+    actions.after_list_action(service.list_tasks())
 
 @app.command()
 def status(task_id: str, tail: int = 20):
@@ -44,12 +57,14 @@ def cancel(task_id: str):
 @app.command()
 def pull(task_id: str, dest: Path = typer.Option("./src-updated")):
     """同期実行"""
-    service.pull_artifacts(task_id, dest)
+    def pull_func():
+        service.pull_artifacts(task_id, dest)
+    actions.pull_progress_action(pull_func, dest)
 
 @app.command()
 def prune():
     """掃除実行"""
-    service.prune_containers()
+    actions.prune_progress_action(service.prune_containers())
 
 if __name__ == "__main__":
     app()

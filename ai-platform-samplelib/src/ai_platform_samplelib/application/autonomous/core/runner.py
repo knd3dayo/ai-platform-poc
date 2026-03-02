@@ -77,14 +77,14 @@ class ComposeRunner:
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy(item, dest)
 
-    def launch_container(self, command: str = "", volumes: list = [], env: dict = {}):
+    def launch_container(self, command: str = "", volumes: list = [], env: dict = {}, detach: bool = True) -> Container:
         """
         コンテナを起動し、task_id を返します。
         volumes: [(ホストパス, コンテナパス, モード), ...] のリスト
         """
         params = {
             "service": self.compose_config.service_name,
-            "detach": True,
+            "detach": detach,
             # "remove": True, # 終了時に自動削除
             "tty": False,   # ★明示的に False を指定（あるいは省略）
         }
@@ -110,7 +110,8 @@ class ComposeRunner:
             background_tasks: BackgroundTasks | None,
             command: str,
             volumes: list = [], env: dict = {},
-            timeout: int = 300
+            timeout: int = 300,
+            detach: bool = True
         ) -> str:
         
         # 1. 既存の実行を確認（多重実行防止）
@@ -127,18 +128,20 @@ class ComposeRunner:
         container = self.launch_container(
             command=command,
             volumes=volumes,
-            env=env
+            env=env,
+            detach=detach
         )
         if not container:
             raise RuntimeError("Failed to launch container")
 
         # 4. ステータス更新（Pydanticモデルを使用）
-        TaskManager.upsert_task(self.task_id, TaskStatus(
+        task_status = TaskStatus(
             task_id=self.task_id,
             status="running",
             created_at=datetime.now(),
             container_id=container.id,
-        ))
+        )
+        TaskManager.upsert_task(self.task_id, task_status)
 
         # 5. 監視開始
         
@@ -200,6 +203,7 @@ class ComposeRunner:
                 task.status = "completed" if exit_code == 0 else "failed"
                 task.stdout = out_logs
                 task.artifacts = artifacts
+                TaskManager.upsert_task(task_id, task)
 
         except Exception as e:
             task = TaskManager.get_task(task_id)
@@ -226,7 +230,8 @@ class ComposeRunner:
         zip_file: Optional[UploadFile] = None,
         source_path: Optional[pathlib.Path] = None,
         task_id: Optional[str] = None,
-        timeout: int = 300
+        timeout: int = 300,
+        detach: bool = True,
     ) -> str:
         """
         インスタンス生成からコンテナ起動までを一括で行うエントリーポイント
@@ -248,8 +253,8 @@ class ComposeRunner:
         command = f"{command_base} {prompt}"
         
         # 4. 実行開始（内部で launch_container と monitor_container を呼び出す）
-        # runner.run() は以前実装した「ステータス更新と監視開始」を行うメソッドです
-        return await runner.run(background_tasks, command, timeout=timeout)
+            # runner.run() は以前実装した「ステータス更新と監視開始」を行うメソッドです
+        return await runner.run(background_tasks, command, timeout=timeout, detach=detach)
 
 # --- ステータス取得の修正 ---
     @classmethod

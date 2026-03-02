@@ -28,6 +28,7 @@ class TaskManager:
     @classmethod
     def upsert_task(cls, task_id: str, status: TaskStatus):
         cls.tasks[task_id] = status
+        cls.save_tasks()
 
     @classmethod
     def get_all_tasks(cls) -> dict[str, TaskStatus]:
@@ -37,6 +38,7 @@ class TaskManager:
     def remove_task(cls, task_id: str):
         if task_id in cls.tasks:
             del cls.tasks[task_id]
+        cls.save_tasks()
 
     @classmethod
     def save_tasks(cls):
@@ -52,6 +54,5 @@ class TaskManager:
             with open(TaskManager.get_tasks_file_path(), "r") as f:
                 data = json.load(f)
                 for k, v in data.items():
-                    TaskManager.upsert_task(k, TaskStatus(**v))
-
+                    cls.tasks[k] = TaskStatus(**v)
     

@@ -1,4 +1,4 @@
-from typing import Dict, Optional, List, ClassVar
+from typing import Dict, Optional, List, ClassVar, Literal
 from datetime import datetime
 from pydantic import BaseModel, Field
 import os
@@ -38,7 +38,8 @@ class AutonomousAgentRequest(BaseModel):
 
 class TaskStatus(BaseModel):
     task_id: str
-    status: str  # running, completed, failed, timeout
+    status: Literal["running", "completed", "failed", "timeout", "cancelled"]  # running, completed, failed, timeout, cancelled
+    sub_status: Optional[Literal["running-foreground", "running-background","pulling", "starting", "exited"]] = None  # より詳細な状態（例: "pulling", "starting", "running", "exited"など）
     stdout: Optional[str] = None
     stderr: Optional[str] = None
     artifacts: Optional[List[str]] = None

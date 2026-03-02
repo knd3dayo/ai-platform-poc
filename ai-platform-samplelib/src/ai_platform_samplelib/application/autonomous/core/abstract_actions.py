@@ -1,6 +1,6 @@
+from typing import Callable, Generator
 import asyncio
 from pathlib import Path
-from contextlib import contextmanager
 
 from abc import ABC, abstractmethod
 
@@ -20,14 +20,12 @@ class AbstractActions(ABC):
         pass
 
     @abstractmethod
-    async def progress_action(
-            self, tid: str, loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event, 
-            last_line_count: int, last_stderr_count: int) -> TaskStatus:
+    async def progress_action(self, tid: str) -> TaskStatus:
         pass
 
     @abstractmethod
     def after_complete_action(
-            self, tid: str, config: ComposeConfig, dest: Path) -> None:
+            self, tid: str, dest: Path) -> None:
         pass
     @abstractmethod
     def after_task_not_found_action(self) -> None:
@@ -45,11 +43,9 @@ class AbstractActions(ABC):
     def before_pull_action(self, runner: ComposeRunner) -> None:
         pass
     @abstractmethod
-    @contextmanager
-    def pull_progress_action(self, runner: ComposeRunner, dest: Path):
-        yield
+    def pull_progress_action(self, func: Callable, dest: Path):
+        pass
 
     @abstractmethod
-    @contextmanager
-    def prune_progress_action(self):
-        yield 
+    def prune_progress_action(self, generator: Generator[str, None, None]):
+        pass
