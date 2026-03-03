@@ -22,9 +22,9 @@ class LangGraphNodes:
         return {"messages": [response]}
 
     @staticmethod
-    async def supervisor_agent(state: MessagesState):
+    async def supervisor_agent(state: MessagesState, tools: list):
         
-        llm = LLMUtils.create_llm().bind_tools(tools=Tools.tools) 
+        llm = LLMUtils.create_llm().bind_tools(tools=tools) 
         
         sys_prompt = SystemMessage(content=(
             "あなたは実行責任者です。承認された計画に基づき、直ちにツールを呼び出して実行してください。\n"

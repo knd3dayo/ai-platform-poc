@@ -7,6 +7,7 @@ import asyncio
 import shlex
 from datetime import datetime
 import shutil
+from dotenv import dotenv_values
 
 from fastapi import UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
@@ -124,12 +125,31 @@ class ComposeRunner:
         """ComposeRunner を使ってコマンドを実行し、container_id を返します。"""
         volumes = [(str(self.task_dir), "/workspace", "rw")]
 
-        # 3. コンテナ起動（self 内のメソッドを呼ぶ）
+        # 3. docker compose 実行時の環境変数を確定
+        # NOTE:
+        # - docker compose の ${VAR} 展開は「composeコマンド実行時の環境」に依存する。
+        # - Supervisor(ホスト)の環境変数（例: LLM_BASE_URL=http://localhost:4000）をそのまま引き継ぐと、
+        #   コンテナ内では localhost が別物になるため接続エラーになりやすい。
+        # - そこで composeプロジェクト配下の .env（例: images/cline-image/.env）を読み取り、
+        #   compose.run の envs として明示的に渡して優先させる。
+        compose_env: Dict[str, str] = {}
+        try:
+            env_path = pathlib.Path(self.compose_config.project_directory) / ".env"
+            if env_path.exists() and env_path.is_file():
+                values = dotenv_values(str(env_path))
+                compose_env = {k: v for k, v in values.items() if isinstance(k, str) and isinstance(v, str)}
+        except Exception as e:
+            logger.warning(f"Failed to load compose env file: {e}")
+
+        # 呼び出し元の env 引数は最優先（上書き）
+        merged_env = {**compose_env, **(env or {})}
+
+        # 4. コンテナ起動（self 内のメソッドを呼ぶ）
         container = self.launch_container(
             command=command,
             volumes=volumes,
-            env=env,
-            detach=detach
+            env=merged_env,
+            detach=detach,
         )
         if not container:
             raise RuntimeError("Failed to launch container")

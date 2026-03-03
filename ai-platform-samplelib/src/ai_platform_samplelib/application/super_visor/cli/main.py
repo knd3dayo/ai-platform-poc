@@ -82,12 +82,14 @@ import asyncio
 import typer
 # ... 他のインポート ...
 
-async def run_integrated_agent_core(message: str, source_path: Optional[pathlib.Path], auto_approve: bool):
+async def run_integrated_agent_core(
+        message: str, source_path: Optional[pathlib.Path], auto_approve: bool, tools: list = local_tools
+        ):
     typer.secho("🤖 統合エージェント（Planning Mode）を起動中...", fg=typer.colors.MAGENTA, bold=True)
     
     wf = ParallelAgentWorkflow()
     # プランナーを有効化
-    graph = wf.create_graph(include_planner=True).compile()
+    graph = wf.create_graph(include_planner=True, tools=tools).compile()
 
     user_input = message
     if source_path:

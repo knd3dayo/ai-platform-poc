@@ -5,8 +5,7 @@ import threading
 import traceback
 from collections import deque
 
-from langchain_core.tools import tool
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import AIMessage
 
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langchain_core.messages import HumanMessage
@@ -179,11 +178,17 @@ class ParallelAgentWorkflow:
         return END         # なければ会話終了
 
 
-    def create_graph(self, include_planner: bool = False, custom_tools: list = []) -> StateGraph: 
+    def create_graph(self, include_planner: bool = False, tools: Optional[list] = None) -> StateGraph:
         workflow = StateGraph(MessagesState)
-        
-        workflow.add_node("agent", LangGraphNodes.supervisor_agent)
-        workflow.add_node("tools", Tools.tools_node)
+
+        # IMPORTANT: LLM側にバインドするツールと、ToolNode側で実行可能なツールは必ず一致させる。
+        # ここがズレると、LLMが存在しないツール名（例: run_executor_local）を呼び出して失敗する。
+        effective_tools = Tools.tools if tools is None else tools
+
+        async def create_agent_node(state: MessagesState):
+            return await LangGraphNodes.supervisor_agent(state, tools=effective_tools)
+        workflow.add_node("agent", create_agent_node)
+        workflow.add_node("tools", ToolNode(effective_tools))
 
         if include_planner:
             workflow.add_node("planner", LangGraphNodes.planner_node)
