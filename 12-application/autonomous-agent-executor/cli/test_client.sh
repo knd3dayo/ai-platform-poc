@@ -12,8 +12,14 @@ elif [ "$1" = "claude" ]; then
     set -a
     . ./.env_claude_code
     set +a
+elif [ "$1" = "open-code" ]; then
+  echo "🚀 Starting Open Code API Server..."
+    # envファイルの読み込み。
+    set -a
+    . ./.env_open_code
+    set +a
 else
-  echo "❌ Invalid argument. Use 'cline' or 'claude'."
+  echo "❌ Invalid argument. Use 'cline', 'claude', or 'open-code'."
   exit 1
 fi
 
