@@ -29,18 +29,26 @@ def _infer_repo_root(start: pathlib.Path) -> Optional[pathlib.Path]:
 @app.command()
 def run(
     message: Annotated[str, typer.Argument(help="指示内容")],
-    source_dir: Annotated[Optional[pathlib.Path], typer.Option("--source-dir", "-s", exists=True)] = None,
+    source_dirs: Annotated[
+        Optional[list[pathlib.Path]],
+        typer.Option(
+            "--source-dir",
+            "-s",
+            exists=True,
+            help="executor の /workspace に取り込むホスト側パス（複数指定可。例: -s ./14-front -s ./ai-platform-samplelib）",
+        ),
+    ] = None,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="計画承認をスキップ")] = False,
 ):
     """
     計画を立て、ユーザーの承認を得てから自律エージェントを実行します。
     """
-    if source_dir is None:
+    if not source_dirs:
         inferred = _infer_repo_root(pathlib.Path.cwd())
         if inferred is not None:
-            source_dir = inferred
+            source_dirs = [inferred]
             typer.secho(
-                f"[super-visor] --source-dir 未指定のため自動設定しました: {source_dir}",
+                f"[super-visor] --source-dir 未指定のため自動設定しました: {inferred}",
                 fg=typer.colors.BLUE,
             )
         else:
@@ -51,10 +59,10 @@ def run(
             )
     async def _main() -> None:
         runner = cast(
-            Callable[[str, Optional[pathlib.Path], bool], Awaitable[None]],
+            Callable[[str, Optional[list[pathlib.Path]], bool], Awaitable[None]],
             run_integrated_agent_core,
         )
-        await runner(message, source_dir, yes)
+        await runner(message, source_dirs, yes)
 
     asyncio.run(_main())
     

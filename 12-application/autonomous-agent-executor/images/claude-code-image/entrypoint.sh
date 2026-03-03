@@ -21,5 +21,8 @@ if [ -z "${ANTHROPIC_MODEL}" ] && [ -n "${LLM_MODEL}" ]; then
     export ANTHROPIC_MODEL="${LLM_MODEL}"
 fi
 
-
-exec "$@" < /dev/null
+if [ -t 0 ]; then
+    exec "$@"
+else
+    exec "$@" < /dev/null
+fi

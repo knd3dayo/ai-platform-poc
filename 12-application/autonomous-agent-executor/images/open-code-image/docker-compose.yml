@@ -1,9 +1,9 @@
 services:
-  claude-code-executor:
+  open-code-executor:
     build:
       context: .
       dockerfile: Dockerfile
-    image: claude-code-executor-image
+    image: open-code-executor-image
     stdin_open: true
     tty: true
     working_dir: /workspace

@@ -53,19 +53,66 @@ class ComposeRunner:
     def prepare_workspace(self, 
                           initial_files: Optional[Dict[str, str]] = None, 
                           zip_file: Optional[UploadFile] = None, 
-                          source_path: Optional[pathlib.Path] = None):
+                          source_path: Optional[pathlib.Path] = None,
+                          source_paths: Optional[Sequence[pathlib.Path]] = None):
         """入力ソースに関わらずワークスペースを準備する（共通化）"""
         if zip_file:
             ExecutorUtil.extract_zip_to_dir(zip_file, self.task_dir)
         if initial_files:
             for name, content in initial_files.items():
                 (self.task_dir / name).write_text(content, encoding='utf-8')
-        if source_path and source_path.exists():
-            # ディレクトリなら中身を、ファイルならそのものをコピー
-            if source_path.is_dir():
-                self._safe_copy_dir(source_path, self.task_dir)
-            else:
-                shutil.copy2(source_path, self.task_dir)
+
+        resolved_sources: list[pathlib.Path] = []
+        if source_paths:
+            resolved_sources.extend([p for p in source_paths if isinstance(p, pathlib.Path)])
+        if isinstance(source_path, pathlib.Path):
+            resolved_sources.append(source_path)
+
+        # 互換性: 1つのディレクトリ指定は従来通り /workspace 直下に展開
+        unique_sources: list[pathlib.Path] = []
+        seen: set[str] = set()
+        for p in resolved_sources:
+            try:
+                rp = str(p.resolve())
+            except Exception:
+                rp = str(p)
+            if rp in seen:
+                continue
+            seen.add(rp)
+            unique_sources.append(p)
+
+        if len(unique_sources) == 1 and unique_sources[0].exists() and unique_sources[0].is_dir():
+            self._safe_copy_dir(unique_sources[0], self.task_dir)
+            return
+
+        if unique_sources:
+            inputs_dir = self.task_dir / "inputs"
+            inputs_dir.mkdir(parents=True, exist_ok=True)
+
+            used_names: set[str] = set()
+
+            def _alloc_name(base: str) -> str:
+                base = (base or "source").strip() or "source"
+                name = base
+                i = 2
+                while name in used_names:
+                    name = f"{base}__{i}"
+                    i += 1
+                used_names.add(name)
+                return name
+
+            for src in unique_sources:
+                if not src.exists():
+                    continue
+
+                target_name = _alloc_name(src.name)
+                target_path = inputs_dir / target_name
+
+                if src.is_dir():
+                    self._safe_copy_dir(src, target_path)
+                else:
+                    target_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, target_path)
 
     @staticmethod
     def _safe_copy_dir(src: pathlib.Path, dst: pathlib.Path) -> None:
@@ -359,6 +406,7 @@ class ComposeRunner:
         initial_files: Optional[Dict[str, str]] = None,
         zip_file: Optional[UploadFile] = None,
         source_path: Optional[pathlib.Path] = None,
+        source_paths: Optional[Sequence[pathlib.Path]] = None,
         task_id: Optional[str] = None,
         timeout: int = 300,
         detach: bool = True,
@@ -375,7 +423,8 @@ class ComposeRunner:
         runner.prepare_workspace(
             initial_files=initial_files,
             zip_file=zip_file,
-            source_path=source_path
+            source_path=source_path,
+            source_paths=source_paths,
         )        # 2. ファイルの配置（ZIPまたは初期ファイル）
 
         # 3. コマンドと実行設定

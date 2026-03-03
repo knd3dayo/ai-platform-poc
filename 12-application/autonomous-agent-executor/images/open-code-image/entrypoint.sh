@@ -10,13 +10,13 @@ fi
 # 2. 作業ディレクトリの権限チェック（マウントされた場合用）
 sudo chown -R codeuser:codeuser /workspace
 
-# 環境変数がある場合のみ認証を実行
-if [ -n "$LLM_API_KEY" ]; then
-  cline auth -p "$LLM_PROVIDER" -k "$LLM_API_KEY" -b "$LLM_BASE_URL" -m "$LLM_MODEL"
-fi
+# 3. 環境変数をopencode.jsonに反映させるためのPythonスクリプトを実行
+mkdir -p /home/codeuser/.config/opencode
+python3 /home/codeuser/create_opencode_json.py  /home/codeuser/.config/opencode/opencode.json
+
 # その後に本来のコマンドを実行 
 if [ -t 0 ]; then
-  exec "$@"
+    exec "$@"
 else
-  exec "$@" < /dev/null
+    exec "$@" < /dev/null
 fi

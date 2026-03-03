@@ -21,6 +21,7 @@ from ai_platform_samplelib.application.autonomous.model.models import ComposeCon
 async def run_executor_local(
     prompt: str,
     source_dir: Optional[str] = None,
+    source_dirs: Optional[List[str]] = None,
     timeout: int = 300,
 ) -> Dict[str, Any]:
     """コーディングエージェントを直接起動します。"""
@@ -29,7 +30,11 @@ async def run_executor_local(
     typer.secho(f"\n[Executor] Task started: {task_id}", fg=typer.colors.CYAN)
 
     normalized_source_dir: Optional[pathlib.Path] = None
-    if isinstance(source_dir, str) and source_dir:
+    normalized_source_dirs: Optional[list[pathlib.Path]] = None
+
+    if isinstance(source_dirs, list) and source_dirs:
+        normalized_source_dirs = [pathlib.Path(p) for p in source_dirs if isinstance(p, str) and p]
+    elif isinstance(source_dir, str) and source_dir:
         normalized_source_dir = pathlib.Path(source_dir)
 
     await ComposeRunner.create_and_run(
@@ -37,6 +42,7 @@ async def run_executor_local(
         background_tasks=None, 
         prompt=prompt,
         source_path=normalized_source_dir,
+        source_paths=normalized_source_dirs,
         task_id=task_id,
         timeout=timeout
     )

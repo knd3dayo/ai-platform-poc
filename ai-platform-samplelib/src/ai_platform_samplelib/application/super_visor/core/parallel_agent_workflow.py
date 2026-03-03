@@ -30,6 +30,7 @@ class ParallelExecutionState(TypedDict, total=False):
 
     # Optional execution context
     source_dir: Optional[pathlib.Path]
+    source_dirs: Optional[list[pathlib.Path]]
     zip_path: Optional[str]
 
     # Parallel task execution
@@ -182,7 +183,7 @@ local_tools = [run_executor_local]
 local_tool_node = ToolNode(local_tools)
 
 async def run_integrated_agent_core(
-        message: str, source_path: Optional[pathlib.Path], auto_approve: bool, tools: list = local_tools
+    message: str, source_paths: Optional[list[pathlib.Path]], auto_approve: bool, tools: list = local_tools
         ):
     typer.secho("🤖 統合エージェント（Planning Mode）を起動中...", fg=typer.colors.MAGENTA, bold=True)
     
@@ -190,18 +191,35 @@ async def run_integrated_agent_core(
     # プランナーを有効化 + 4並列ワーカーで実行
     graph = wf.create_parallel_graph(include_planner=True, tools=tools, max_parallel=4).compile()
 
+    normalized_sources: list[pathlib.Path] = []
+    for p in (source_paths or []):
+        if isinstance(p, pathlib.Path):
+            normalized_sources.append(p)
+
     user_input = message
-    if source_path:
+    if len(normalized_sources) == 1:
+        source_path = normalized_sources[0]
         user_input += (
             f"\n\n[Context] 作業ディレクトリ(ホスト): {source_path.resolve()}"
             "\n[Context] executor コンテナ内の作業ディレクトリ: /workspace"
             "\n[Context] タスクでは /workspace からのパスで参照してください。"
         )
+    elif len(normalized_sources) >= 2:
+        listed = "\n".join([f"- {p.resolve()}" for p in normalized_sources])
+        user_input += (
+            "\n\n[Context] 取り込み対象(ホスト)が複数指定されています:"
+            f"\n{listed}"
+            "\n[Context] executor コンテナ内では /workspace/inputs/<name>/... に配置されます。"
+            "\n[Context] タスクでは /workspace からのパスで参照してください。"
+        )
 
     initial_input: ParallelExecutionState = {
         "messages": [HumanMessage(content=user_input)],
-        "source_dir": source_path,
     }
+    if len(normalized_sources) == 1:
+        initial_input["source_dir"] = normalized_sources[0]
+    elif len(normalized_sources) >= 2:
+        initial_input["source_dirs"] = normalized_sources
 
     # stream_mode="updates" でノードごとの出力をハンドリング
     async for event in graph.astream(initial_input, stream_mode="updates"):
@@ -481,6 +499,8 @@ class ParallelAgentWorkflow:
             shared: Dict[str, Any] = {}
             if state.get("source_dir") is not None:
                 shared["source_dir"] = state.get("source_dir")
+            if state.get("source_dirs") is not None:
+                shared["source_dirs"] = state.get("source_dirs")
             if state.get("zip_path") is not None:
                 shared["zip_path"] = state.get("zip_path")
 
@@ -504,6 +524,7 @@ class ParallelAgentWorkflow:
             )
 
             source_dir = state.get("source_dir")
+            source_dirs = state.get("source_dirs")
             zip_path = state.get("zip_path")
 
             # ツール選択（ローカル優先、次にzip、最後に通常）
@@ -512,15 +533,19 @@ class ParallelAgentWorkflow:
 
             if "run_executor_local" in tools_by_name:
                 tool = tools_by_name["run_executor_local"]
-                if source_dir is not None:
+                if source_dirs is not None:
+                    tool_args["source_dirs"] = [str(p) for p in source_dirs]
+                elif source_dir is not None:
                     tool_args["source_dir"] = str(source_dir)
                 tool_args["timeout"] = 600
-            elif "run_autonomous_agent_executor_zip" in tools_by_name and (zip_path or source_dir):
+            elif "run_autonomous_agent_executor_zip" in tools_by_name and (zip_path or source_dir or source_dirs):
                 tool = tools_by_name["run_autonomous_agent_executor_zip"]
                 if zip_path:
                     tool_args["zip_path"] = zip_path
                 elif source_dir is not None:
                     tool_args["dir_path"] = str(source_dir)
+                elif source_dirs is not None and source_dirs:
+                    tool_args["dir_path"] = str(source_dirs[0])
                 tool_args["timeout"] = 900
             elif "run_autonomous_agent_executor" in tools_by_name:
                 tool = tools_by_name["run_autonomous_agent_executor"]
