@@ -35,12 +35,17 @@ RUN chmod +x /usr/local/bin/init-firewall.sh /usr/local/bin/entrypoint.sh && \
     echo "codeuser ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh, /usr/sbin/chown, /usr/bin/chown" > /etc/sudoers.d/codeuser-admin && \
     chmod 0440 /etc/sudoers.d/codeuser-admin
 
-# 6. OpenCode AIのインストール
+# 6. LibreOfficeのインストール
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libreoffice \
+    && rm -rf /var/lib/apt/lists/*
+    
+# 7. OpenCode AIのインストール
 USER codeuser
 RUN mkdir -p /home/codeuser/.npm-global && \
     npm install -g opencode-ai
 
-# 7. アプリケーション用ディレクトリと権限設定
+# 8. アプリケーション用ディレクトリと権限設定
 RUN python3 -m venv /home/codeuser/.venv-tools && \
     /home/codeuser/.venv-tools/bin/pip install --no-cache-dir -U pip && \
     /home/codeuser/.venv-tools/bin/pip install --no-cache-dir uv
@@ -48,8 +53,9 @@ RUN mkdir -p /home/codeuser/app && chown codeuser:codeuser /home/codeuser/app
 COPY --chown=codeuser:codeuser ai-platform-samplelib /home/codeuser/app
 RUN cd /home/codeuser/app && uv sync --no-dev
 
-# 8. opencode.json生成用のPythonスクリプトを配置。(entrypoint.shで実行される)
+# 9. opencode.json生成用のPythonスクリプトを配置。(entrypoint.shで実行される)
 COPY create_opencode_json.py /home/codeuser/
+
 
 ENTRYPOINT ["entrypoint.sh"]
 CMD ["/bin/bash"]

@@ -17,19 +17,25 @@ def main(output_path: str):
 
     llm_base_url = os.getenv("LLM_BASE_URL" )
 
+    config = {}
+
     provider_options= {"apiKey": llm_api_key}
     if llm_base_url:
         provider_options["baseURL"] = llm_base_url
-    config = {
-        "$schema": "https://opencode.ai/config.json",
-        "provider": {
-            f"{llm_provider}": {
-                "options": provider_options
-            }
-        },
-        "model": f"{llm_provider}/{llm_model}"
+
+    config["$schema"] = "https://opencode.ai/config.json"
+    config["provider"] = {
+        llm_provider: {
+            "options": provider_options
+        }
     }
-    
+    config["model"] = f"{llm_provider}/{llm_model}"
+
+    """
+    config["mcp"] = {}
+    """
+
+
     with open(output_path, "w") as f:
         json.dump(config, f, indent=2)
     
