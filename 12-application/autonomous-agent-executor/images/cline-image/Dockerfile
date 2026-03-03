@@ -6,6 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     python3 \
+    python3-pip \
+    python3-venv \
     sudo \
     iptables \
     ipset \
@@ -21,15 +23,11 @@ RUN usermod -l codeuser node && \
 WORKDIR /workspace
 RUN chown codeuser:codeuser /workspace
 
-# 4. アプリケーション用ディレクトリとライブラリ配置
-RUN mkdir -p /home/codeuser/app && chown codeuser:codeuser /home/codeuser/app
-COPY ai-platform-samplelib /home/codeuser/app
-
-# 5. Clineのインストール先パス設定
+# 4. Clineのインストール先パス設定
 ENV NPM_CONFIG_PREFIX=/home/codeuser/.npm-global
-ENV PATH=$PATH:/home/codeuser/.npm-global/bin
+ENV PATH=$PATH:/home/codeuser/.npm-global/bin:/home/codeuser/.venv-tools/bin
 
-# 6. FirewallスクリプトとEntrypointの配置
+# 5. FirewallスクリプトとEntrypointの配置
 COPY init-firewall.sh /usr/local/bin/
 COPY entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/init-firewall.sh /usr/local/bin/entrypoint.sh && \
@@ -38,10 +36,17 @@ RUN chmod +x /usr/local/bin/init-firewall.sh /usr/local/bin/entrypoint.sh && \
     chmod 0440 /etc/sudoers.d/codeuser-admin
 
 # 6. Clineのインストール
-# 7. Clineのインストール
 USER codeuser
 RUN mkdir -p /home/codeuser/.npm-global && \
     npm install -g cline
+
+# 7. アプリケーション用ディレクトリと権限設定
+RUN python3 -m venv /home/codeuser/.venv-tools && \
+    /home/codeuser/.venv-tools/bin/pip install --no-cache-dir -U pip && \
+    /home/codeuser/.venv-tools/bin/pip install --no-cache-dir uv
+RUN mkdir -p /home/codeuser/app && chown codeuser:codeuser /home/codeuser/app
+COPY --chown=codeuser:codeuser ai-platform-samplelib /home/codeuser/app
+RUN cd /home/codeuser/app && uv sync --no-dev
 
 ENTRYPOINT ["entrypoint.sh"]
 CMD ["/bin/bash"]
