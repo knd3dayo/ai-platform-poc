@@ -1,8 +1,5 @@
 services:
   claude-code-executor:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: claude-code-executor-image
     stdin_open: true
     tty: true

@@ -1,0 +1,15 @@
+.git/
+.github/
+.pytest_cache/
+.venv/
+.env
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Avoid sending local Python envs that may exist inside the staged lib
+ai-platform-samplelib/.venv/
+ai-platform-samplelib/**/__pycache__/
+ai-platform-samplelib/**/*.pyc

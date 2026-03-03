@@ -1,8 +1,5 @@
 services:
   open-code-executor:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: open-code-executor-image
     stdin_open: true
     tty: true

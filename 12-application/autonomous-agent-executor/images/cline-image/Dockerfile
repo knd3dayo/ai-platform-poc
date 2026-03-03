@@ -21,11 +21,15 @@ RUN usermod -l codeuser node && \
 WORKDIR /workspace
 RUN chown codeuser:codeuser /workspace
 
-# 4. Clineのインストール先パス設定
+# 4. アプリケーション用ディレクトリとライブラリ配置
+RUN mkdir -p /home/codeuser/app && chown codeuser:codeuser /home/codeuser/app
+COPY ai-platform-samplelib /home/codeuser/app
+
+# 5. Clineのインストール先パス設定
 ENV NPM_CONFIG_PREFIX=/home/codeuser/.npm-global
 ENV PATH=$PATH:/home/codeuser/.npm-global/bin
 
-# 5. FirewallスクリプトとEntrypointの配置
+# 6. FirewallスクリプトとEntrypointの配置
 COPY init-firewall.sh /usr/local/bin/
 COPY entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/init-firewall.sh /usr/local/bin/entrypoint.sh && \
@@ -34,6 +38,7 @@ RUN chmod +x /usr/local/bin/init-firewall.sh /usr/local/bin/entrypoint.sh && \
     chmod 0440 /etc/sudoers.d/codeuser-admin
 
 # 6. Clineのインストール
+# 7. Clineのインストール
 USER codeuser
 RUN mkdir -p /home/codeuser/.npm-global && \
     npm install -g cline

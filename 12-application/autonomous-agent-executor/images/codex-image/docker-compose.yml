@@ -1,6 +1,5 @@
 services:
   executor:
-    build: .
     image: my-executor:latest
     container_name: executor-service
     restart: always

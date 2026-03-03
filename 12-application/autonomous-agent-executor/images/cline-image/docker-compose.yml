@@ -1,8 +1,5 @@
 services:
   cline:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: cline-executor-image
     stdin_open: true
     tty: true
