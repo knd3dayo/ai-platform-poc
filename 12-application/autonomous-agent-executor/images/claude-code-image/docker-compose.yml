@@ -9,11 +9,8 @@ services:
     working_dir: /workspace
     volumes:
       - .:/workspace
-    environment:
-      # ホスト側の .env から値を渡す
-      - ANTHROPIC_AUTH_TOKEN=${LLM_API_KEY}
-      - ANTHROPIC_BASE_URL=${LLM_BASE_URL}
-      - ANTHROPIC_MODEL=${LLM_MODEL}
+    env_file:
+      - .env
     
     cap_add:
       # iptablesの初期化にネットワークスタックへのアクセスが必要なため

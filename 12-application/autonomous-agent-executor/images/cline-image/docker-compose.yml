@@ -9,12 +9,8 @@ services:
     working_dir: /workspace
     volumes:
       - .:/workspace
-    environment:
-      # ホスト側の .env から値を渡す
-      - LLM_PROVIDER=${LLM_PROVIDER}
-      - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_BASE_URL=${LLM_BASE_URL}
-      - LLM_MODEL=${LLM_MODEL}
+    env_file:
+      - .env
     
     cap_add:
       # iptablesの初期化にネットワークスタックへのアクセスが必要なため

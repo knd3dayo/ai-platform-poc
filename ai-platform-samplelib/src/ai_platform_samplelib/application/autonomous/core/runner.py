@@ -1,4 +1,4 @@
-from typing import Dict, Optional, cast, ClassVar
+from typing import Dict, Optional, cast, ClassVar, Sequence, Union
 from datetime import datetime
 import uuid
 import pathlib
@@ -7,7 +7,9 @@ import asyncio
 import shlex
 from datetime import datetime
 import shutil
+import os
 from dotenv import dotenv_values
+from urllib.parse import urlparse
 
 from fastapi import UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
@@ -23,6 +25,15 @@ logger = get_application_logger()
 
 class ComposeRunner:
     """docker-compose.yml から設定を動的に読み取り、コンテナを実行するクラス"""
+
+    @staticmethod
+    def _is_loopback_base_url(url: str) -> bool:
+        try:
+            parsed = urlparse(url)
+            host = (parsed.hostname or "").lower()
+            return host in {"localhost", "127.0.0.1", "::1"}
+        except Exception:
+            return False
 
     def __init__(self, compose_config: ComposeConfig, task_id: Optional[str] = None):
 
@@ -52,9 +63,66 @@ class ComposeRunner:
         if source_path and source_path.exists():
             # ディレクトリなら中身を、ファイルならそのものをコピー
             if source_path.is_dir():
-                shutil.copytree(source_path, self.task_dir, dirs_exist_ok=True)
+                self._safe_copy_dir(source_path, self.task_dir)
             else:
                 shutil.copy2(source_path, self.task_dir)
+
+    @staticmethod
+    def _safe_copy_dir(src: pathlib.Path, dst: pathlib.Path) -> None:
+        """src ディレクトリを dst に安全にコピーする。
+
+        - 巨大/不要/権限が怪しいディレクトリ（data, .git 等）はスキップ
+        - PermissionError 等はスキップして継続
+        """
+        skip_top = {
+            ".git",
+            ".venv",
+            "node_modules",
+            "__pycache__",
+            ".mypy_cache",
+            ".pytest_cache",
+            ".ruff_cache",
+            "data",  # clickhouse/postgres 等の永続ボリュームが入りがち
+        }
+
+        src = src.resolve()
+        dst.mkdir(parents=True, exist_ok=True)
+
+        for root, dirs, files in os.walk(src, topdown=True, followlinks=False):
+            root_path = pathlib.Path(root)
+            rel = root_path.relative_to(src)
+
+            # top-level skip
+            if rel.parts and rel.parts[0] in skip_top:
+                dirs[:] = []
+                continue
+
+            # in-tree skip
+            dirs[:] = [
+                d
+                for d in dirs
+                if d not in {"__pycache__", "node_modules"} and not d.startswith(".git")
+            ]
+
+            target_dir = dst / rel
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+            except PermissionError:
+                continue
+
+            for fname in files:
+                src_file = root_path / fname
+                rel_file = src_file.relative_to(src)
+                if rel_file.parts and rel_file.parts[0] in skip_top:
+                    continue
+                if "__pycache__" in rel_file.parts:
+                    continue
+                try:
+                    (dst / rel_file).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_file, dst / rel_file)
+                except (PermissionError, FileNotFoundError, OSError):
+                    # ボリューム配下や一時ファイルなど、読めない/消えるものはスキップ
+                    continue
 
     def add_initial_files(self, initial_files: Dict[str, str] | None):
         """初期ファイルを task_dir に配置します。"""
@@ -78,7 +146,7 @@ class ComposeRunner:
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy(item, dest)
 
-    def launch_container(self, command: str = "", volumes: list = [], env: dict = {}, detach: bool = True) -> Container:
+    def launch_container(self, command: Union[str, Sequence[str]] = "", volumes: list = [], env: dict = {}, detach: bool = True) -> Container:
         """
         コンテナを起動し、task_id を返します。
         volumes: [(ホストパス, コンテナパス, モード), ...] のリスト
@@ -91,7 +159,12 @@ class ComposeRunner:
         }
         
         if command:
-            params["command"] = shlex.split(command)  # コマンドをリスト形式で渡す    
+            # 自然言語プロンプトは空白を含むため、呼び出し側で配列にして渡された場合はそのまま使う。
+            # 文字列で渡された場合のみ shlex.split で分解する。
+            if isinstance(command, str):
+                params["command"] = shlex.split(command)
+            else:
+                params["command"] = list(command)
         if volumes:
             params["volumes"] = volumes
         if env:
@@ -109,7 +182,7 @@ class ComposeRunner:
     async def run(
             self,
             background_tasks: BackgroundTasks | None,
-            command: str,
+            command: Union[str, Sequence[str]],
             volumes: list = [], env: dict = {},
             timeout: int = 300,
             detach: bool = True
@@ -141,8 +214,15 @@ class ComposeRunner:
         except Exception as e:
             logger.warning(f"Failed to load compose env file: {e}")
 
-        # 呼び出し元の env 引数は最優先（上書き）
+        # composeプロジェクト配下の .env は「コンテナ内から見える値（例: litellm:4000）」を持つ。
+        # 一方で呼び出し元（Supervisor/CLI）環境はホスト向け（例: localhost:4000）になりがち。
+        # そのため、呼び出し元が loopback を指定している場合は .env 側を優先する。
         merged_env = {**compose_env, **(env or {})}
+        base_url = merged_env.get("LLM_BASE_URL")
+        if isinstance(base_url, str) and self._is_loopback_base_url(base_url):
+            compose_base_url = compose_env.get("LLM_BASE_URL")
+            if isinstance(compose_base_url, str) and compose_base_url:
+                merged_env["LLM_BASE_URL"] = compose_base_url
 
         # 4. コンテナ起動（self 内のメソッドを呼ぶ）
         container = self.launch_container(
@@ -183,9 +263,39 @@ class ComposeRunner:
     # --- 内部ロジック ---
 
     async def monitor_container(self, task_id: str, container: Container, task_dir: pathlib.Path, timeout: int):
-        # debug用 containerの設定内容
-        print(f"container.config: {container.config}")
-        print(f"container.args: {container.args}")
+        # debug用: container設定/引数は秘匿情報(ENV)を含みうるため、デフォルトでは出さない。
+        if os.getenv("AI_PLATFORM_DEBUG_CONTAINER") == "1":
+            try:
+                cfg = getattr(container, "config", None)
+                args = getattr(container, "args", None)
+
+                safe_env = None
+                env_list = getattr(cfg, "env", None) if cfg is not None else None
+                if isinstance(env_list, list):
+                    safe_env = []
+                    for item in env_list:
+                        if not isinstance(item, str) or "=" not in item:
+                            safe_env.append(item)
+                            continue
+                        key, value = item.split("=", 1)
+                        upper = key.upper()
+                        if any(k in upper for k in ("KEY", "TOKEN", "SECRET", "PASSWORD")):
+                            safe_env.append(f"{key}=***")
+                        else:
+                            safe_env.append(item)
+
+                logger.debug(
+                    "container.debug id=%s image=%s cmd=%s entrypoint=%s env=%s",
+                    getattr(container, "id", None),
+                    getattr(cfg, "image", None) if cfg is not None else None,
+                    getattr(cfg, "cmd", None) if cfg is not None else None,
+                    getattr(cfg, "entrypoint", None) if cfg is not None else None,
+                    safe_env,
+                )
+                logger.debug("container.args=%s", args)
+            except Exception:
+                # デバッグログの失敗で本処理を落とさない
+                pass
         try:
             start_time = asyncio.get_event_loop().time()
             while True:
@@ -270,7 +380,9 @@ class ComposeRunner:
 
         # 3. コマンドと実行設定
         command_base = compose_config.compose_command
-        command = f"{command_base} {prompt}"
+        command = shlex.split(command_base)
+        if prompt:
+            command.append(prompt)
         
         # 4. 実行開始（内部で launch_container と monitor_container を呼び出す）
             # runner.run() は以前実装した「ステータス更新と監視開始」を行うメソッドです
@@ -278,7 +390,7 @@ class ComposeRunner:
 
 # --- ステータス取得の修正 ---
     @classmethod
-    async def get_status(cls, task_id: str, tail: int = 200) -> TaskStatus:
+    async def get_status(cls, task_id: str, tail: int | None = 200) -> TaskStatus:
         task = TaskManager.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
@@ -287,7 +399,10 @@ class ComposeRunner:
             try:
                 # whales を使って実行中のコンテナからログを取得
                 # 戻り値は結合されたログの文字列です
-                logs = whales.container.logs(task.container_id, tail=tail)
+                if tail is None:
+                    logs = whales.container.logs(task.container_id)
+                else:
+                    logs = whales.container.logs(task.container_id, tail=tail)
                 if isinstance(logs, str):
                     logs_str = logs
                 else:
