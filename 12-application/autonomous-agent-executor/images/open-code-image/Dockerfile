@@ -39,23 +39,41 @@ RUN chmod +x /usr/local/bin/init-firewall.sh /usr/local/bin/entrypoint.sh && \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice \
     && rm -rf /var/lib/apt/lists/*
-    
-# 7. OpenCode AIのインストール
+
+#################################
+# codeuserの作業
+#################################
 USER codeuser
+
+# 7. uvのインストール
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/home/codeuser/.local/bin/:$PATH"
+
+# 8. アプリケーション用ディレクトリと権限設定
+
+RUN mkdir -p /home/codeuser/app/ai-platform-samplelib
+RUN mkdir -p /home/codeuser/app/mcp
+COPY --chown=codeuser:codeuser ai-platform-samplelib /home/codeuser/app/ai-platform-samplelib
+COPY --chown=codeuser:codeuser mcp /home/codeuser/app/mcp
+RUN chown codeuser:codeuser /home/codeuser/app
+
+RUN cd /home/codeuser/app/ai-platform-samplelib && uv sync --no-dev
+
+# /home/codeuser/app/mcp/*/にMCP用のプロジェクトが配置されているので、
+# entrypoint.sh内でこれらをループしてuv syncすることで、MCPプロジェクトの依存関係も解決されるようにする。
+RUN for mcp_dir in /home/codeuser/app/mcp/*/; do \
+    if [ -f "$mcp_dir/pyproject.toml" ]; then \
+        cd "$mcp_dir" && uv sync --no-dev; \
+    fi; \
+done
+
+# 9. OpenCode AIのインストール
 RUN mkdir -p /home/codeuser/.npm-global && \
     npm install -g opencode-ai
 
-# 8. アプリケーション用ディレクトリと権限設定
-RUN python3 -m venv /home/codeuser/.venv-tools && \
-    /home/codeuser/.venv-tools/bin/pip install --no-cache-dir -U pip && \
-    /home/codeuser/.venv-tools/bin/pip install --no-cache-dir uv
-RUN mkdir -p /home/codeuser/app && chown codeuser:codeuser /home/codeuser/app
-COPY --chown=codeuser:codeuser ai-platform-samplelib /home/codeuser/app
-RUN cd /home/codeuser/app && uv sync --no-dev
-
-# 9. opencode.json生成用のPythonスクリプトを配置。(entrypoint.shで実行される)
+# 10. opencode.json生成用のPythonスクリプトを配置。(entrypoint.shで実行される)
 COPY create_opencode_json.py /home/codeuser/
 
-
+USER root
 ENTRYPOINT ["entrypoint.sh"]
 CMD ["/bin/bash"]

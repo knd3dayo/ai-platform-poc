@@ -7,16 +7,22 @@ if [ -f "/usr/local/bin/init-firewall.sh" ]; then
     sudo /usr/local/bin/init-firewall.sh
 fi
 
-# 2. 作業ディレクトリの権限チェック（マウントされた場合用）
-sudo chown -R codeuser:codeuser /workspace
-
-# 3. 環境変数をopencode.jsonに反映させるためのPythonスクリプトを実行
+# 2. 環境変数をopencode.jsonに反映させるためのPythonスクリプトを実行
 mkdir -p /home/codeuser/.config/opencode
 python3 /home/codeuser/create_opencode_json.py  /home/codeuser/.config/opencode/opencode.json
 
+# 3. USER_IDとGROUP_IDを環境変数から取得して、codeuserのUIDとGIDを変更
+if [ -n "$USER_ID" ] && [ -n "$GROUP_ID" ]; then
+    echo "🔧 Setting codeuser UID to $USER_ID and GID to $GROUP_ID"
+    sudo usermod -u "$USER_ID" codeuser
+    sudo groupmod -g "$GROUP_ID" codeuser
+    # 変更後のUIDとGIDで作業ディレクトリの所有権を再設定
+    sudo chown -R codeuser:codeuser /workspace
+fi
+
 # その後に本来のコマンドを実行 
 if [ -t 0 ]; then
-    exec "$@"
+    exec runuser -u codeuser -- "$@"
 else
-    exec "$@" < /dev/null
+    exec runuser -u codeuser -- "$@" < /dev/null
 fi

@@ -13,11 +13,14 @@ fi
 
 cleanup() {
 	rm -rf "$basedir/ai-platform-samplelib"
+	rm -rf "$basedir/mcp"
 }
 trap cleanup EXIT
 
 : "${AI_PLATFORM_LIB:?AI_PLATFORM_LIB is required (path to ai-platform-samplelib)}"
 cp -pr "$AI_PLATFORM_LIB" "$basedir/ai-platform-samplelib"
+: "${MCP_LIB:?MCP_LIB is required (path to mcp)}"
+cp -pr "$MCP_LIB" "$basedir/mcp"
 
 docker build \
 	-t open-code-executor-image \
