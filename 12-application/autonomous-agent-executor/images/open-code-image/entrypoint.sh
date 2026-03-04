@@ -20,7 +20,6 @@ if [ -n "$USER_ID" ] && [ -n "$GROUP_ID" ]; then
     sudo chown -R codeuser:codeuser /workspace
 fi
 
-# その後に本来のコマンドを実行 
 if [ -t 0 ]; then
     exec runuser -u codeuser -- "$@"
 else

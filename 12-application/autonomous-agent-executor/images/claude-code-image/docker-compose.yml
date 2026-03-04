@@ -5,7 +5,10 @@ services:
     tty: true
     working_dir: /workspace
     volumes:
-      - .:/workspace
+      - ${WORKSPACE:-./workspace}:/workspace
+    environment:
+      - USER_ID=${USER_ID:-1000}
+      - GROUP_ID=${GROUP_ID:-1000}
     env_file:
       - .env
     
