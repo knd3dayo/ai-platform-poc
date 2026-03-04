@@ -5,11 +5,14 @@ basedir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 cd "$basedir"
 
 env_file="$basedir/.env"
-if [ ! -f "$env_file" ]; then
-	env_file="$basedir/.env_template"
-fi
-
 . "$env_file"
+
+image_name="${IMAGE_NAME}"
+
+if [ -z "$image_name" ]; then
+	echo "IMAGE_NAME is not set in .env or .env_template" >&2
+	exit 1
+fi
 
 cleanup() {
 	rm -rf "$basedir/ai-platform-samplelib"
@@ -23,6 +26,6 @@ cp -pr "$AI_PLATFORM_LIB" "$basedir/ai-platform-samplelib"
 cp -pr "$MCP_LIB" "$basedir/mcp"
 
 docker build \
-	-t open-code-executor-image \
+	-t "$image_name" \
 	-f "$basedir/Dockerfile" \
 	.

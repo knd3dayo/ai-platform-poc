@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iptables \
     ipset \
     iproute2 \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 2. ユーザー作成 (既存のnodeユーザーを再利用して名前を変更)
 RUN usermod -l codeuser node && \
@@ -23,7 +23,7 @@ RUN usermod -l codeuser node && \
 WORKDIR /workspace
 RUN chown codeuser:codeuser /workspace
 
-# 4. OpenCode AIのインストール先パス設定
+# 4. npm グローバルパスの設定
 ENV NPM_CONFIG_PREFIX=/home/codeuser/.npm-global
 ENV PATH=$PATH:/home/codeuser/.npm-global/bin:/home/codeuser/.venv-tools/bin
 
