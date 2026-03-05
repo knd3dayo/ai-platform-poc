@@ -15,10 +15,12 @@ if [ -z "$image_name" ]; then
 fi
 
 cleanup() {
-	rm -rf "$basedir/ai-platform-samplelib"
-	rm -rf "$basedir/mcp"
+	# Best-effort cleanup: ensure this runs even when the script is interrupted.
+	# (e.g. Ctrl+C) and don't let cleanup errors mask the original exit.
+	set +e
+	rm -rf "$basedir/ai-platform-samplelib" "$basedir/mcp"
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM HUP
 
 : "${AI_PLATFORM_LIB:?AI_PLATFORM_LIB is required (path to ai-platform-samplelib)}"
 cp -pr "$AI_PLATFORM_LIB" "$basedir/ai-platform-samplelib"
