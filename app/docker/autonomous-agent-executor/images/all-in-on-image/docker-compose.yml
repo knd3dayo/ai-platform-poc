@@ -4,6 +4,8 @@ services:
     stdin_open: true
     tty: true
     working_dir: /workspace
+    ports:
+      - "4096:4096"
     volumes:
       - ${WORKSPACE:-./workspace}:/workspace
     environment:
@@ -11,7 +13,6 @@ services:
       - GROUP_ID=${GROUP_ID:-1000}
     env_file:
       - .env
-    
     cap_add:
       # iptablesの初期化にネットワークスタックへのアクセスが必要なため
       - NET_ADMIN

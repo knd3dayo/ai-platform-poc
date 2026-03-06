@@ -31,23 +31,19 @@ if [ -z "${ANTHROPIC_MODEL}" ] && [ -n "${LLM_MODEL}" ]; then
     export ANTHROPIC_MODEL="${LLM_MODEL}"
 fi
 
-# 環境変数がある場合のみ認証を実行
-if [ -n "$LLM_API_KEY" ]; then
-  echo "⚠️ LLM_API_KEY is not set. Skipping cline authentication."
-  exit 1
-fi
-if [ -n "$LLM_PROVIDER" ]; then
-  echo "⚠️ LLM_PROVIDER is not set. Skipping cline authentication."
-  exit 1
-fi
-if [ -n "$LLM_MODEL" ]; then
-  echo "⚠️ LLM_MODEL is not set. Skipping cline authentication."
-  exit 1
-fi
-if [ -n "$LLM_BASE_URL" ]; then
-    cline auth -p "$LLM_PROVIDER" -k "$LLM_API_KEY" -m "$LLM_MODEL" -b "$LLM_BASE_URL"
-else
-    cline auth -p "$LLM_PROVIDER" -k "$LLM_API_KEY" -m "$LLM_MODEL"
+# cline を実行する場合のみ認証を実行
+requested_cmd="${1:-}"
+if [ "$requested_cmd" = "cline" ]; then
+    if [ -z "${LLM_API_KEY:-}" ] || [ -z "${LLM_PROVIDER:-}" ] || [ -z "${LLM_MODEL:-}" ]; then
+        echo "LLM_API_KEY/LLM_PROVIDER/LLM_MODEL are required for cline" >&2
+        exit 1
+    fi
+
+    if [ -n "${LLM_BASE_URL:-}" ]; then
+        cline auth -p "$LLM_PROVIDER" -k "$LLM_API_KEY" -m "$LLM_MODEL" -b "$LLM_BASE_URL"
+    else
+        cline auth -p "$LLM_PROVIDER" -k "$LLM_API_KEY" -m "$LLM_MODEL"
+    fi
 fi
 
 if [ -t 0 ]; then
