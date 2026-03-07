@@ -4,11 +4,12 @@ import pathlib
 import io
 import zipfile
 from typing import Union
-from fastapi import UploadFile, HTTPException
+from fastapi import UploadFile
 import zipfile
 import tempfile
 from pathlib import Path
 import atexit
+import shutil
 
 class ExecutorUtil:
     """タスクの実行と管理に関するユーティリティ関数をまとめたクラスです。"""
@@ -76,3 +77,29 @@ class ExecutorUtil:
                     raise Exception(f"Unsafe zip member detected: {member}")
             
             zip_ref.extractall(dest_dir)
+
+    @staticmethod
+    def add_data(initial_files: dict[str, str] | None, workspace: pathlib.Path):
+        """初期ファイルを task_dir に配置します。"""
+        if not initial_files:
+            return
+        for name, content in initial_files.items():
+            (workspace / name).write_text(content, encoding='utf-8')
+
+    @staticmethod
+    def add_zip_file( zip_file: UploadFile, workspace: pathlib.Path):
+        """アップロードされた ZIP ファイルを task_dir に展開します。"""
+        ExecutorUtil.extract_zip_to_dir(zip_file, workspace)
+
+    @staticmethod
+    def add_files(src_paths: list[pathlib.Path], workspace: pathlib.Path):
+        for src_path in src_paths:
+            """src_path のファイルを task_dir にコピーします。"""
+            if src_path.is_file():
+                shutil.copy(src_path, workspace / src_path.name)
+            elif src_path.is_dir():
+                for item in src_path.rglob('*'):
+                    if item.is_file():
+                        dest = workspace / item.relative_to(src_path)
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy(item, dest)

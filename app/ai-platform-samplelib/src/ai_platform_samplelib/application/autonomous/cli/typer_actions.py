@@ -15,8 +15,10 @@ from python_on_whales import docker as whales
 # 内部パッケージのインポート
 from ..core.abstract_actions import AbstractActions
 from ..model.models import TaskStatus, ComposeConfig
-from ..core.runner import ComposeRunner
 from ..model.models import TaskStatus, ComposeConfig
+from ..core.coding_agent_runner import CodingAgentRunner
+
+from ..core.task_manager import TaskManager
 
 class TyperActions(AbstractActions) :
 
@@ -41,7 +43,7 @@ class TyperActions(AbstractActions) :
         with Live(Spinner("dots", text="実行中...", style="cyan"), refresh_per_second=4, transient=True) as live:
             try:
                 while not stop_event.is_set():
-                    status_data = await ComposeRunner.get_status(tid, tail=1000)
+                    status_data = await TaskManager.get_status(tid, tail=1000)
                     
                     # 1. 標準出力の表示
                     if status_data.stdout:
@@ -72,26 +74,25 @@ class TyperActions(AbstractActions) :
                     loop.remove_signal_handler(sig)
 
         # ループを抜けた後の処理
-        status_data = await ComposeRunner.get_status(tid)
+        status_data = await TaskManager.get_status(tid)
 
         self.console.print(f"\n🏁 終了ステータス: [bold cyan]{status_data.status}[/bold cyan]")
 
         # 中断時の処理
         if stop_event.is_set():
             if typer.confirm("⚠️ 中断しました。コンテナを停止して削除しますか？", default=True):
-                await ComposeRunner.cancel_task(tid)
+                await TaskManager.cancel_task(tid)
                 self.console.print(f"🛑 タスク {tid} をキャンセルしました。")
                 status_data.status = "cancelled"  # キャンセルフラグを立てる（必要に応じて）
         return status_data
 
     def after_complete_action(
-            self, tid: str,dest: Path) -> None:
+            self, runner: CodingAgentRunner,dest: Path) -> None:
         if typer.confirm("✅ 完了しました。成果物をローカルに同期（pull）しますか？", default=True):
             # 既存の pull コマンドロジックを再利用
             try:
-                runner = ComposeRunner(compose_config=ComposeConfig.from_env(), task_id=tid)
                 import shutil
-                shutil.copytree(runner.task_dir, dest, dirs_exist_ok=True)
+                shutil.copytree(runner.workspace, dest, dirs_exist_ok=True)
                 self.console.print(f"[bold green]✨ 成果物を {dest} に同期しました。[/bold green]")
             except Exception as e:
                 self.console.print(f"[bold red]❌ 同期中にエラーが発生しました: {e}[/bold red]")
@@ -114,10 +115,10 @@ class TyperActions(AbstractActions) :
         if status_data.artifacts:
             self.console.print(f"\n[Artifacts]\n{', '.join(status_data.artifacts)}")
 
-    def before_pull_action(self, runner: ComposeRunner) -> None:
-        if not runner.task_dir.exists():
+    def before_pull_action(self, runner: CodingAgentRunner) -> None:
+        if not runner.workspace.exists():
             # 赤文字でエラーを表示して終了
-            typer.secho(f"❌ エラー: タスクディレクトリ {runner.task_dir} が見つかりません。", fg=typer.colors.RED, err=True)
+            typer.secho(f"❌ エラー: タスクディレクトリ {runner.workspace} が見つかりません。", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=1)
 
     def pull_progress_action(self, func: Callable, dest: Path):
@@ -134,11 +135,6 @@ class TyperActions(AbstractActions) :
         
         typer.echo("🧹 掃除を開始します...")
         try:
-            # APIサーバーの実装を再利用
-            containers = whales.container.list(filters={"label": "managed_by=executor-service"})
-            if not containers:
-                typer.echo("掃除対象のコンテナはありません。")
-                return
             for msg in generator:
                 typer.echo(f"✅ {msg}")
                 # コンテナを削除するロジックは generator 内で実行される想定

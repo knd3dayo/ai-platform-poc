@@ -1,7 +1,10 @@
-from typing import Optional, ClassVar
+from typing import Optional, ClassVar, Generator
+import pathlib
+import json
 import os, pathlib
 import json
-
+from fastapi import HTTPException
+from python_on_whales import docker as whales
 from ..model.models import TaskStatus
 
 # --- 設定：環境に合わせて調整 ---
@@ -55,4 +58,80 @@ class TaskManager:
                 data = json.load(f)
                 for k, v in data.items():
                     cls.tasks[k] = TaskStatus(**v)
-    
+
+
+    @classmethod
+    def list_tasks(cls) -> list[TaskStatus]:
+        """タスクの一覧表示"""
+        TaskManager.load_tasks()
+        tasks = TaskManager.get_all_tasks()
+        if not tasks:
+            # self.actions.after_task_not_found_action()
+            return []
+        
+        table = [[tid, t.status, t.created_at.strftime("%Y-%m-%d %H:%M")] 
+                 for tid, t in tasks.items()]
+        return list(tasks.values())
+
+    @classmethod
+    async def show_status(cls, task_id: str, tail: int) -> TaskStatus:
+        """ステータスとログの表示（async版に統一）"""
+        data = await TaskManager.get_status(task_id, tail=tail)
+        return data
+
+    # --- ステータス取得の修正 ---
+    @classmethod
+    async def get_status(cls, task_id: str, tail: int | None = 200) -> TaskStatus:
+        task = TaskManager.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        if task.status == "running" and task.container_id:
+            try:
+                # whales を使って実行中のコンテナからログを取得
+                # 戻り値は結合されたログの文字列です
+                if tail is None:
+                    logs = whales.container.logs(task.container_id)
+                else:
+                    logs = whales.container.logs(task.container_id, tail=tail)
+                if isinstance(logs, str):
+                    logs_str = logs
+                else:
+                    # Convert iterable of (stream, bytes) to string
+                    logs_str = "".join(
+                        b.decode("utf-8", errors="replace") if isinstance(b, bytes) else str(b)
+                        for _, b in logs
+                    )
+                return TaskStatus(**task.model_dump(exclude={"stdout"}), stdout=logs_str)
+            except Exception as e:
+                return TaskStatus(**task.model_dump(exclude={"stderr"}), stderr=f"Log fetch failed: {e}")
+
+        return task
+
+    # --- キャンセルの修正 ---
+    @classmethod
+    async def cancel_task(cls, task_id: str):
+        task = TaskManager.get_task(task_id)
+        if task and task.status == "running" and task.container_id:
+            try:
+                # whales で強制終了
+                whales.container.kill(task.container_id)
+                TaskManager.upsert_task(task_id, TaskStatus(
+                    task_id=task_id,
+                    status="cancelled",
+                    created_at=task.created_at,
+                    container_id=task.container_id,
+                    stderr=task.stderr
+                ))
+                return {"message": f"Task {task_id} cancelled."}
+            except Exception as e:
+                return {"message": f"Cancel failed: {str(e)}"}
+        return {"message": "Task not found or not running."}
+
+    @classmethod
+    def prune_containers(cls, compose_service_name: str) -> Generator[str, None, None]:
+        """掃除ロジック"""
+        containers = whales.container.list(filters={"label": f"managed_by={compose_service_name}"})
+        for c in containers:
+            c.remove(force=True)
+            yield f"Removed container {c.id[:12]}"

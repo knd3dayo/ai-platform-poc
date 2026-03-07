@@ -3,14 +3,15 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 import os
 from dotenv import load_dotenv
-class ComposeConfig(BaseModel):
+
+class CodingAgentConfig(BaseModel):
 
     env_file: ClassVar[str] = ".env"  # デフォルトの環境変数ファイルパス
+
+    llm_base_url: str = Field(..., description="Base URL for the LLM API")
+    llm_model: str = Field(..., description="LLM model to use (e.g., gpt-4o)")
+    workspace_root: str = Field(default="/tmp/autonomous_agent_tasks", description="Root directory for task workspaces")
     
-    project_directory: str = Field(..., description="Path to the directory containing docker-compose.yml")
-    compose_file: str = Field(..., description="Name of the docker-compose file")
-    service_name: str = Field(..., description="Name of the service in docker-compose to run")
-    compose_command : str = Field(..., description="Command to execute in the container (overrides default)")
     @classmethod
     def set_env_file(cls, env_file: str):
         cls.env_file = env_file
@@ -19,17 +20,39 @@ class ComposeConfig(BaseModel):
     def from_env(cls):
         load_dotenv(cls.env_file)  # 指定された環境変数ファイルをロード
         params = {
-            "project_directory": os.getenv("COMPOSE_PROJECT_DIRECTORY", "."),
+            "llm_base_url": os.getenv("LLM_BASE_URL", "http://localhost:4000"),
+            "llm_model": os.getenv("LLM_MODEL", "gpt-4o"),
+            "workspace_root": os.getenv("WORKSPACE_ROOT", "/tmp/autonomous_agent_tasks")
+        }
+        return cls(**params)
+    
+class ComposeConfig(BaseModel):
+
+    env_file: ClassVar[str] = ".env"  # デフォルトの環境変数ファイルパス
+    
+    compose_directory: str = Field(..., description="Path to the directory containing docker-compose.yml")
+    compose_file: str = Field(..., description="Name of the docker-compose file")
+    compose_service_name: str = Field(..., description="Name of the service in docker-compose to run")
+    compose_command : str = Field(..., description="Command to execute in the container (overrides default)")
+
+    @classmethod
+    def set_env_file(cls, env_file: str):
+        cls.env_file = env_file
+
+    @classmethod
+    def from_env(cls):
+        load_dotenv(cls.env_file)  # 指定された環境変数ファイルをロード
+        params = {
+            "compose_directory": os.getenv("COMPOSE_DIRECTORY", "."),
             "compose_file": os.getenv("COMPOSE_FILE", "docker-compose.yml"),
-            "service_name": os.getenv("COMPOSE_SERVICE_NAME", "executor-service"),
+            "compose_service_name": os.getenv("COMPOSE_SERVICE_NAME", "executor-service"),
             "compose_command": os.getenv("COMPOSE_COMMAND", "cline -y")
         }
 
         return cls(**params)
-        
 
     def get_compose_path(self) -> str:
-        return os.path.join(self.project_directory, self.compose_file)
+        return os.path.join(self.compose_directory, self.compose_file)
 
 class AutonomousAgentRequest(BaseModel):
     prompt: str = Field(..., examples=["hello.py を修正して"])

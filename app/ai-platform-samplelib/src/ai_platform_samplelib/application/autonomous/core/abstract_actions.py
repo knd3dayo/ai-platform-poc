@@ -1,5 +1,4 @@
 from typing import Callable, Generator
-import asyncio
 from pathlib import Path
 
 from abc import ABC, abstractmethod
@@ -7,7 +6,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 # 内部パッケージのインポート
-from ..core.runner import ComposeRunner
+from ..core.coding_agent_runner import CodingAgentRunner
 from ..model.models import TaskStatus, ComposeConfig
 
 class AbstractActions(ABC):
@@ -25,7 +24,7 @@ class AbstractActions(ABC):
 
     @abstractmethod
     def after_complete_action(
-            self, tid: str, dest: Path) -> None:
+            self, runner: CodingAgentRunner, dest: Path) -> None:
         pass
     @abstractmethod
     def after_task_not_found_action(self) -> None:
@@ -40,7 +39,7 @@ class AbstractActions(ABC):
     def after_get_status_action(self, task_id: str, status_data: TaskStatus) -> None:
         pass
     @abstractmethod
-    def before_pull_action(self, runner: ComposeRunner) -> None:
+    def before_pull_action(self, runner: CodingAgentRunner) -> None:
         pass
     @abstractmethod
     def pull_progress_action(self, func: Callable, dest: Path):
