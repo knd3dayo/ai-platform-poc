@@ -19,12 +19,21 @@ class LLMUtils:
         """LLMのインスタンスを生成する関数（必要に応じてカスタマイズ）"""
         # .envファイルから環境変数を読み込む
         server_config = ServerConfig.load_from_env()
+
+        if not server_config.llm_api_key:
+            raise RuntimeError(
+                "LLM_API_KEY is required. Set it via environment variables (e.g. source an env file) before running Supervisor CLI."
+            )
+
         params = {
             "model": server_config.llm_model,
             "api_key": SecretStr(server_config.llm_api_key or ""),
         }
         if server_config.llm_base_url:
-            base_url = server_config.llm_base_url
+            base_url = server_config.llm_base_url.rstrip("/")
+            # OpenAI-compatible servers (e.g. LiteLLM) commonly expose endpoints under /v1.
+            if not base_url.endswith("/v1"):
+                base_url = f"{base_url}/v1"
             params["base_url"] = base_url
         
         llm = ChatOpenAI(
@@ -54,10 +63,28 @@ class JobUtils:
 
     @classmethod
     def try_cancel_executor_task(cls, job: Job) -> None:
-        """tool 結果に task_id が入っていれば Autonomous Agent Executor へ cancel を投げる（ベストエフォート）。"""
+        """tool 結果をもとに実行中タスクのキャンセルを試みる（ベストエフォート）。
+
+        優先順位:
+        1) ローカル実行(run_executor_local)で container_id が取れている場合はコンテナを kill
+        2) それ以外は従来通り Executor API(/cancel/{task_id}) を叩く
+        """
         last_tool = job.progress.get("last_tool")
         if not isinstance(last_tool, dict):
             return
+
+        # 1) ローカル実行: container_id があればそれを kill
+        container_id = last_tool.get("container_id")
+        if isinstance(container_id, str) and container_id:
+            try:
+                from python_on_whales import docker as whales
+
+                whales.container.kill(container_id)
+                cls.append_server_log(job, f"Killed local executor container_id={container_id}")
+                return
+            except Exception as e:
+                cls.append_server_log(job, f"Failed to kill local executor container: {e}")
+
         task_id = last_tool.get("task_id")
         if not task_id:
             return

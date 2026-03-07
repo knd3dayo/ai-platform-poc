@@ -11,8 +11,9 @@ from langgraph.graph import MessagesState
 from langchain_core.tools import tool
 
 from ..core.utils import LLMUtils
-from ai_platform_samplelib.application.autonomous.core.runner import ComposeRunner
-from ai_platform_samplelib.application.autonomous.model.models import ComposeConfig
+from ai_platform_samplelib.application.autonomous.core.coding_agent_runner import CodingAgentRunner
+from ai_platform_samplelib.application.autonomous.core.task_manager import TaskManager
+from ai_platform_samplelib.application.autonomous.core.task_service import TaskService
 
 # ==========================================
 # 1. ローカル実行ツール (変更なし)
@@ -25,7 +26,6 @@ async def run_executor_local(
     timeout: int = 300,
 ) -> Dict[str, Any]:
     """コーディングエージェントを直接起動します。"""
-    compose_config = ComposeConfig.from_env()
     task_id = str(uuid.uuid4())
     typer.secho(f"\n[Executor] Task started: {task_id}", fg=typer.colors.CYAN)
 
@@ -37,15 +37,25 @@ async def run_executor_local(
     elif isinstance(source_dir, str) and source_dir:
         normalized_source_dir = pathlib.Path(source_dir)
 
-    await ComposeRunner.create_and_run(
-        compose_config=compose_config,
-        background_tasks=None, 
+    normalized_sources: list[pathlib.Path] = []
+    if isinstance(normalized_source_dirs, list) and normalized_source_dirs:
+        normalized_sources.extend(normalized_source_dirs)
+    elif isinstance(normalized_source_dir, pathlib.Path):
+        normalized_sources.append(normalized_source_dir)
+
+    runner = await CodingAgentRunner.create_runner(
         prompt=prompt,
-        source_path=normalized_source_dir,
-        source_paths=normalized_source_dirs,
+        source_paths=normalized_sources or None,
         task_id=task_id,
-        timeout=timeout
+        detach=True,
     )
+    container = runner.run()
+    runner.task_status.container_id = getattr(container, "id", None)
+    runner.task_status.starting_foregrond()
+    TaskManager.upsert_task(runner.task_status)
+
+    # 終了時のステータス確定/成果物同期のため監視をバックグラウンドで回す
+    asyncio.create_task(TaskService.monitor_container(container, runner, timeout))
 
     last_stdout: str = ""
     last_printed_lines: list[str] = []
@@ -89,8 +99,8 @@ async def run_executor_local(
 
     while True:
         # 実行中は full logs を取り、CLI で増分表示する
-        status = await ComposeRunner.get_status(task_id, tail=None)
-        if status.status in ["completed", "failed", "cancelled"]:
+        status = await TaskManager.get_status(task_id, tail=None)
+        if status.status == "exited":
             # 終了時に最後のログを出してから返す
             if status.stdout:
                 _emit_new_lines(status.stdout)

@@ -8,6 +8,7 @@ import pathlib
 import re
 import os
 from collections import deque
+import zipfile
 
 from langchain_core.messages import AIMessage
 from langchain_core.messages import HumanMessage
@@ -182,6 +183,27 @@ import typer
 local_tools = [run_executor_local]
 local_tool_node = ToolNode(local_tools)
 
+
+def _safe_extract_zip(zip_path: str, dest_dir: pathlib.Path) -> pathlib.Path:
+    """ZIP を dest_dir に安全に展開して、展開先ディレクトリを返す。"""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    base = dest_dir.resolve()
+
+    with zipfile.ZipFile(zip_path) as zf:
+        for member in zf.infolist():
+            # ディレクトリはスキップ（ZipFile.extract でも作られるが明示）
+            if member.is_dir():
+                continue
+
+            # ZipSlip 対策: 展開後パスが base 配下に収まることを保証する
+            target = (dest_dir / member.filename).resolve()
+            if not str(target).startswith(str(base) + os.sep) and target != base:
+                raise ValueError(f"Unsafe zip entry path: {member.filename}")
+
+        zf.extractall(dest_dir)
+
+    return dest_dir
+
 async def run_integrated_agent_core(
     message: str, source_paths: Optional[list[pathlib.Path]], auto_approve: bool, tools: list = local_tools
         ):
@@ -305,24 +327,26 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
         )
 
     try:
-
         wf = ParallelAgentWorkflow()
-        graph = wf.create_graph().compile()
+        # API 経路も「Python内完結（ローカルツール優先）」をデフォルトとする
+        graph = wf.create_graph(tools=local_tools).compile()
         server_config = ServerConfig.load_from_env()
 
         # parallel_agent_workflow 側のデフォルト分岐と合わせる
         llm_base_url = server_config.llm_base_url 
         executor_base_url = server_config.executor_base_url
 
-        # ユーザーがZIPを渡してきた場合は、Supervisor がツール呼び出しで使えるようパスを明示する。
-        # run_autonomous_agent_executor_zip は zip_path を受け取れるので、実ファイルパスを案内すれば良い。
+        # ユーザーがZIPを渡してきた場合は、一時ディレクトリへ展開して source_dir として案内する。
         user_message = message
         if input_zip_path:
+            tmp_dir = pathlib.Path(input_zip_path).parent
+            extracted_dir = _safe_extract_zip(input_zip_path, tmp_dir / "unzipped")
             user_message += (
-                "\n\n[入力ZIP]\n"
-                "ユーザーがZIPファイルをアップロードしました。必要なら `run_autonomous_agent_executor_zip` を使い、"
-                "次の zip_path を指定して処理してください。\n"
-                f"zip_path: {input_zip_path}\n"
+                "\n\n[入力ソース]\n"
+                "ユーザーがZIPファイルをアップロードしました。内容はサーバ側で展開済みです。\n"
+                "次の方針で `run_executor_local` を呼び出してください。\n"
+                f"- source_dir: {extracted_dir.as_posix()}\n"
+                "- executor コンテナ内の作業ディレクトリは /workspace（ファイル参照は /workspace から）\n"
             )
 
         state: MessagesState = {"messages": [HumanMessage(content=user_message)]}
@@ -332,7 +356,7 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
             if job:
                 JobUtils.append_server_log(job, "LangGraph stream started")
                 JobUtils.append_server_log(job, f"llm_base_url={llm_base_url}")
-                JobUtils.append_server_log(job, f"executor_base_url={executor_base_url}")
+                JobUtils.append_server_log(job, "execution_mode=local")
                 job.progress["llm_base_url"] = llm_base_url
                 job.progress["executor_base_url"] = executor_base_url
 
@@ -431,7 +455,7 @@ class ParallelAgentWorkflow:
 
         # IMPORTANT: LLM側にバインドするツールと、ToolNode側で実行可能なツールは必ず一致させる。
         # ここがズレると、LLMが存在しないツール名（例: run_executor_local）を呼び出して失敗する。
-        effective_tools = Tools.tools if tools is None else tools
+        effective_tools = local_tools if tools is None else tools
 
         async def create_agent_node(state: MessagesState):
             return await LangGraphNodes.supervisor_agent(state, tools=effective_tools)
@@ -463,7 +487,7 @@ class ParallelAgentWorkflow:
         if max_parallel < 1:
             raise ValueError("max_parallel must be >= 1")
 
-        effective_tools = Tools.tools if tools is None else tools
+        effective_tools = local_tools if tools is None else tools
         tools_by_name = {getattr(t, "name", str(i)): t for i, t in enumerate(effective_tools)}
 
         async def plan_to_tasks(state: ParallelExecutionState) -> Dict[str, Any]:

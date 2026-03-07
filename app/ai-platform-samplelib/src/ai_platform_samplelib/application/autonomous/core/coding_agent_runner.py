@@ -72,13 +72,17 @@ class CodingAgentRunner:
         # LLM 設定をホスト環境から引き継ぐ。
         # compose 側で env_file が指定されていても、ここで渡す env が優先されるため
         # CLI で設定した LLM_MODEL 等を確実にコンテナへ反映できる。
+        llm_base_url_in_container = os.getenv("LLM_BASE_URL_IN_CONTAINER")
         for key in (
             "LLM_PROVIDER",
             "LLM_MODEL",
             "LLM_API_KEY",
             "LLM_BASE_URL",
         ):
-            value = os.getenv(key)
+            if key == "LLM_BASE_URL" and llm_base_url_in_container:
+                value = llm_base_url_in_container
+            else:
+                value = os.getenv(key)
             if value:
                 params["envs"][key] = value
 
