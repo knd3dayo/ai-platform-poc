@@ -9,17 +9,15 @@ env_file="$basedir/.env"
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  ./run.sh [--config <dir>] [--host <host>] <command: opencode|claude|cline> [args...]
+  ./run.sh [--config <dir>] <command: opencode|claude|cline> [args...]
 
 Options:
   --config <dir>   Copy <dir> contents into workspace before running (default: ./config/common)
-  --host <host>    Alias for: opencode web --hostname <host> (only applied when running opencode web)
   -h, --help       Show this help
 EOF
 }
 
 config_dir="$basedir/config/common"
-opencode_web_host=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -39,20 +37,6 @@ while [ $# -gt 0 ]; do
       ;;
     --config=*)
       config_dir="${1#--config=}"
-      shift
-      ;;
-    --host)
-      shift
-      if [ $# -eq 0 ]; then
-        echo "--host requires an argument" >&2
-        usage
-        exit 1
-      fi
-      opencode_web_host="$1"
-      shift
-      ;;
-    --host=*)
-      opencode_web_host="${1#--host=}"
       shift
       ;;
     --)
@@ -118,22 +102,6 @@ compose_run_extra_args=""
 # docker compose run does not publish ports unless --service-ports is set.
 if [ "$command" = "opencode" ] && [ "${1:-}" = "web" ]; then
   compose_run_extra_args="--service-ports"
-
-  if [ -n "$opencode_web_host" ]; then
-    has_hostname=0
-    for arg in "$@"; do
-      case "$arg" in
-        --hostname|--hostname=*)
-          has_hostname=1
-          break
-          ;;
-      esac
-    done
-
-    if [ "$has_hostname" -eq 0 ]; then
-      set -- "$@" --hostname "$opencode_web_host"
-    fi
-  fi
 fi
 
 env WORKSPACE=${WORKSPACE:-./workspace} USER_ID=$USER_ID GROUP_ID=$GROUP_ID docker compose run $compose_run_extra_args --rm $service_name $command $@
