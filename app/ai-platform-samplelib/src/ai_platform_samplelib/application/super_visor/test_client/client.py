@@ -6,8 +6,8 @@
     - message: str (必須)
     - file: zip (任意)
 - GET /api/status/{thread_id}
-    - status (queued/running/completed/failed)
-    - progress.server_logs / progress.stdout / progress.stderr
+    - status/sub_status (TaskStatus)
+    - metadata.server_logs / stdout / stderr
 
 Usage:
     # ZIPなし
@@ -51,7 +51,7 @@ def submit_job(api_url: str, message: str, zip_path: Optional[str]) -> str:
             timeout=60,
         )
         res.raise_for_status()
-        return res.json()["thread_id"]
+        return res.json()["task_id"]
     finally:
         if file_handle is not None:
             try:
@@ -111,8 +111,9 @@ def main() -> None:
     while True:
         st = get_status(args.api_url, thread_id)
         status = st.get("status")
-        progress = st.get("progress") or {}
-        logs = progress.get("server_logs") or []
+        sub_status = st.get("sub_status")
+        metadata = st.get("metadata") or {}
+        logs = metadata.get("server_logs") or []
 
         if args.print_json:
             print(json.dumps(st, ensure_ascii=False, indent=2))
@@ -123,18 +124,18 @@ def main() -> None:
                 print(f"[server] {line}")
             last_logs_len = len(logs)
 
-            latest = progress.get("latest_message")
+            latest = metadata.get("latest_message")
             if latest:
                 print(f"latest_message: {latest}")
 
-            stderr = progress.get("stderr")
+            stderr = st.get("stderr")
             if stderr:
                 print(f"stderr: {stderr}")
 
-        if status in ("completed", "failed"):
-            print(f"done status={status}")
-            if st.get("error"):
-                print(f"error: {st['error']}")
+        if status == "exited":
+            print(f"done status={status} sub_status={sub_status}")
+            if metadata.get("error"):
+                print(f"error: {metadata['error']}")
             break
 
         if time.time() > deadline:

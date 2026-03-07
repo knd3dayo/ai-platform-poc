@@ -52,8 +52,8 @@ AIエージェントの一般的な用語として「スーパーバイザー」
 
 4. `TaskStatus` の逐次通知がSV経路に乗っていない
    * 方針/期待: 自律型エージェントの処理状況を `TaskStatus` として逐次受け取り、ユーザーまたは非同期連携基盤へ通知する。
-   * 現状: SV側の状態管理は `TaskStatus` ではなく `Job(thread_id, status, progress, ...)` を返す形が中心で、通知もWebhookで“完了時”に送る設計が中心。
-   * 影響: “逐次”通知（Event Bus等）に寄せる場合に追加設計/実装が必要。
+   * 現状: SV側の状態管理は `TaskStatus` に統一済み（SV APIも `TaskStatus` を返す）。一方で、SV→ユーザー/非同期連携基盤への“逐次”通知（Event Bus 等）自体は未実装で、現状はポーリング（`/api/status/{thread_id}`）が中心。
+   * 影響: “逐次”通知（Event Bus等）に寄せる場合は、通知先（Webhook/Event Bus）とイベント粒度（status/sub_status/ログ/成果物）の追加設計/実装が必要。
 
 5. HITL（Human in the loop）はデモ実装はあるが、コーディングエージェント実行と統合されていない
    * 方針/期待: 「もっと情報が必要」「この後どうしますか？」等の回答に対し、ユーザー入力待ち（非同期HITL）を実装する。

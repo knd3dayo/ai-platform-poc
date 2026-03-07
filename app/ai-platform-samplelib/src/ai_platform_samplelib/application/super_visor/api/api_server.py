@@ -3,11 +3,13 @@ import time
 from collections import deque
 import tempfile
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, UploadFile, File, Form
 
-from ..model.models import Job, jobs_lock, jobs
+from ...autonomous.model.models import TaskStatus
+from ..model.models import jobs_lock, jobs
 from ..core.utils import JobUtils
 from ..core.parallel_agent_workflow import start_background_thread
 
@@ -23,12 +25,18 @@ async def submit(
     background_tasks: BackgroundTasks,
     message: str = Form(...),
     file: Optional[UploadFile] = File(None),
-) -> Job:
+) -> TaskStatus:
     """ユーザーからの質問（+ 任意ZIP）を受け取り、バックグラウンドで処理を開始する。"""
 
     thread_id = str(uuid.uuid4())
     with jobs_lock:
-        jobs[thread_id] = Job(thread_id=thread_id, status="queued", progress={"queued_at": time.time(), "server_logs": deque(maxlen=200)})
+        jobs[thread_id] = TaskStatus(
+            task_id=thread_id,
+            status="pending",
+            sub_status="not-started",
+            created_at=datetime.now(timezone.utc),
+            metadata={"queued_at": time.time(), "server_logs": deque(maxlen=200)},
+        )
 
     input_zip_path: Optional[str] = None
     if file is not None:
@@ -46,7 +54,7 @@ async def submit(
 
 
 @app.get("/api/status/{thread_id}")
-async def status(thread_id: str) -> Job:
+async def status(thread_id: str) -> TaskStatus:
     """ジョブの進捗を返す。
 
     - parallel_agent_workflow の tool 実行結果（stdout/stderr/成果物ZIPのbase64等）が
@@ -62,7 +70,7 @@ async def status(thread_id: str) -> Job:
 
 
 @app.delete("/api/cancel/{thread_id}")
-async def cancel(thread_id: str) -> Job:
+async def cancel(thread_id: str) -> TaskStatus:
     """ジョブのキャンセル要求を受け付ける。
 
     NOTE:

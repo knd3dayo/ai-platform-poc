@@ -1,43 +1,22 @@
-from typing import Dict, Any, Optional, ClassVar
-from collections import deque
+from typing import Dict, Optional, ClassVar
 import threading
-from pydantic import BaseModel, field_serializer
+from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
+
+from ...autonomous.model.models import TaskStatus
 # =====================================================
 # In-memory job store (PoC)
 # =====================================================
 # NOTE:
 #   本番用途では Redis / DB など永続ストアに移すこと。
 
-class Job (BaseModel):
-    thread_id: str
-    status: str  # queued, running, completed, failed
-    # status polling で返すための進捗情報（PoC）
-    progress: Dict[str, Any]
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
-
-    # NOTE:
-    #   progress に deque を保持していると FastAPI/Pydantic の JSON 変換で
-    #   `Unable to serialize unknown type: <class 'collections.deque'>` が発生する。
-    #   ただし server_logs はリングバッファとして deque のまま保持したいので、
-    #   レスポンスへ dump するタイミングだけ list に変換する。
-    @field_serializer("progress")
-    def _serialize_progress(self, progress: Dict[str, Any]):
-        if not isinstance(progress, dict):
-            return progress
-
-        server_logs = progress.get("server_logs")
-        if isinstance(server_logs, deque):
-            # shallow copy して server_logs だけ list 化
-            return {**progress, "server_logs": list(server_logs)}
-
-        return progress
-
 
 jobs_lock = threading.Lock()
-jobs: Dict[str, Job] = {}
+# NOTE: SV経路の状態管理も TaskStatus に統一する。
+# - task_id は SV が発行する thread_id をそのまま使用する（PoC）
+# - progress/結果/追加情報は TaskStatus.metadata に格納する
+jobs: Dict[str, TaskStatus] = {}
 
 
 class ServerConfig(BaseModel):

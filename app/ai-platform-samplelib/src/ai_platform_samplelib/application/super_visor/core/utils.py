@@ -10,7 +10,8 @@ from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 
-from ..model.models import Job, jobs_lock, jobs, ServerConfig
+from ...autonomous.model.models import TaskStatus
+from ..model.models import jobs_lock, jobs, ServerConfig
 
 
 class LLMUtils:
@@ -43,33 +44,33 @@ class LLMUtils:
 
 class JobUtils:
     @classmethod
-    def append_server_log(cls, job: Job, line: str, max_lines: int = 200) -> None:
+    def append_server_log(cls, job: TaskStatus, line: str, max_lines: int = 200) -> None:
         """サーバ側の進捗ログをリングバッファで保持する（/api/status で返す用）。"""
-        logs: Deque[str] = job.progress.setdefault("server_logs", deque(maxlen=max_lines))  # type: ignore[assignment]
+        logs: Deque[str] = job.metadata.setdefault("server_logs", deque(maxlen=max_lines))  # type: ignore[assignment]
         # deque は json 化できないので、返却時に list 化する
         if isinstance(logs, deque):
             logs.append(line)
 
     @classmethod
-    def get_cancel_flag(cls, job: Job) -> bool:
-        return bool(job.progress.get("cancel_requested"))
+    def get_cancel_flag(cls, job: TaskStatus) -> bool:
+        return bool(job.metadata.get("cancel_requested"))
 
 
     @classmethod
-    def set_cancel_flag(cls, job: Job) -> None:
-        job.progress["cancel_requested"] = True
-        job.progress["cancel_requested_at"] = time.time()
+    def set_cancel_flag(cls, job: TaskStatus) -> None:
+        job.metadata["cancel_requested"] = True
+        job.metadata["cancel_requested_at"] = time.time()
 
 
     @classmethod
-    def try_cancel_executor_task(cls, job: Job) -> None:
+    def try_cancel_executor_task(cls, job: TaskStatus) -> None:
         """tool 結果をもとに実行中タスクのキャンセルを試みる（ベストエフォート）。
 
         優先順位:
         1) ローカル実行(run_executor_local)で container_id が取れている場合はコンテナを kill
         2) それ以外は従来通り Executor API(/cancel/{task_id}) を叩く
         """
-        last_tool = job.progress.get("last_tool")
+        last_tool = job.metadata.get("last_tool")
         if not isinstance(last_tool, dict):
             return
 
@@ -89,7 +90,7 @@ class JobUtils:
         if not task_id:
             return
 
-        base_url = job.progress.get("executor_base_url")
+        base_url = job.metadata.get("executor_base_url")
         if not isinstance(base_url, str) or not base_url:
             return
 

@@ -1,6 +1,7 @@
-from typing import Dict, Optional, List, ClassVar, Literal
+from collections import deque
+from typing import Any, Dict, Optional, List, ClassVar, Literal
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 import os
 from dotenv import load_dotenv
 
@@ -74,6 +75,22 @@ class TaskStatus(BaseModel):
     artifacts: Optional[List[str]] = None
     created_at: Optional[datetime] = None
     container_id: Optional[str] = None
+
+    # 逐次通知/統合向けの拡張メタ情報。
+    # SV層では server_logs(リングバッファ) 等を入れることがある。
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_serializer("metadata")
+    def _serialize_metadata(self, metadata: Dict[str, Any]):
+        if not isinstance(metadata, dict):
+            return metadata
+
+        server_logs = metadata.get("server_logs")
+        if isinstance(server_logs, deque):
+            # shallow copy して server_logs だけ list 化
+            return {**metadata, "server_logs": list(server_logs)}
+
+        return metadata
 
     def pendding(self):
         self.status = "pending"

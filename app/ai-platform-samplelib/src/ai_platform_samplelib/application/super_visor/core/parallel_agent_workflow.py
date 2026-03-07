@@ -9,6 +9,7 @@ import re
 import os
 from collections import deque
 import zipfile
+from datetime import datetime, timezone
 
 from langchain_core.messages import AIMessage
 from langchain_core.messages import HumanMessage
@@ -18,7 +19,8 @@ from langgraph.graph import MessagesState
 from langgraph.graph.message import add_messages
 from langgraph.types import Send
 
-from ..model.models import ServerConfig, Job, jobs_lock, jobs
+from ...autonomous.model.models import TaskStatus
+from ..model.models import ServerConfig, jobs_lock, jobs
 from ..core.utils import JobUtils, LLMUtils
 from .agent import LangGraphNodes
 from .tools import Tools, ToolNode
@@ -313,15 +315,15 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
     """parallel_agent_workflow をバックグラウンドで実行し、jobs に途中経過/結果を格納する。"""
 
     with jobs_lock:
-        jobs[thread_id] = Job(
-            thread_id=thread_id,
+        jobs[thread_id] = TaskStatus(
+            task_id=thread_id,
             status="running",
-            progress={
+            sub_status="running-foreground",
+            created_at=datetime.now(timezone.utc),
+            metadata={
                 "started_at": time.time(),
                 "latest_message": None,
                 "last_tool": None,
-                "stdout": None,
-                "stderr": None,
                 "server_logs": deque(maxlen=200),
             },
         )
@@ -357,8 +359,8 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
                 JobUtils.append_server_log(job, "LangGraph stream started")
                 JobUtils.append_server_log(job, f"llm_base_url={llm_base_url}")
                 JobUtils.append_server_log(job, "execution_mode=local")
-                job.progress["llm_base_url"] = llm_base_url
-                job.progress["executor_base_url"] = executor_base_url
+                job.metadata["llm_base_url"] = llm_base_url
+                job.metadata["executor_base_url"] = executor_base_url
 
         for event in graph.stream(state, stream_mode="values"):
             # event は state(values) の dict を想定
@@ -375,20 +377,30 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
                 if job:
                     if JobUtils.get_cancel_flag(job):
                         JobUtils.append_server_log(job, "Cancel requested. Stopping stream loop.")
-                        job.status = "cancelled"
+                        job.status = "exited"
+                        job.sub_status = "cancelled"
                         break
-                    job.progress["latest_message"] = latest_content
+                    job.metadata["latest_message"] = latest_content
 
                     tool_payloads = _extract_tool_payloads_from_messages(messages)
                     if tool_payloads:
                         last_tool = tool_payloads[-1]
-                        job.progress["last_tool"] = last_tool
+                        job.metadata["last_tool"] = last_tool
                         JobUtils.append_server_log(job, f"tool_result received keys={list(last_tool.keys())}")
                         # stdout/stderr があれば status ポーリングで返せるようにコピー
                         if "stdout" in last_tool:
-                            job.progress["stdout"] = last_tool.get("stdout")
+                            job.stdout = last_tool.get("stdout")
                         if "stderr" in last_tool:
-                            job.progress["stderr"] = last_tool.get("stderr")
+                            job.stderr = last_tool.get("stderr")
+
+                        container_id = last_tool.get("container_id")
+                        if isinstance(container_id, str) and container_id:
+                            job.container_id = container_id
+
+                        artifacts = last_tool.get("artifacts")
+                        if isinstance(artifacts, list):
+                            # 可能なら str のみ採用
+                            job.artifacts = [a for a in artifacts if isinstance(a, str)]
 
                         # cancel が要求されていたら executor 側にも kill を試みる
                         if JobUtils.get_cancel_flag(job):
@@ -402,16 +414,27 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
                     JobUtils.append_server_log(job, "LangGraph stream finished (cancelled)")
                 else:
                     JobUtils.append_server_log(job, "LangGraph stream finished")
-            jobs[thread_id] = Job(
-                thread_id=thread_id,
-                status="cancelled" if (job and JobUtils.get_cancel_flag(job)) else "completed",
-                progress=job.progress if job else {"latest_message": None},
-                result={
+            if job:
+                job.status = "exited"
+                job.sub_status = "cancelled" if JobUtils.get_cancel_flag(job) else "completed"
+                job.metadata["finished_at"] = time.time()
+                job.metadata["result"] = {
                     "thread_id": thread_id,
-                    "latest_message": job.progress.get("latest_message") if job else None,
-                    "last_tool": job.progress.get("last_tool") if job else None,
-                },
-            )
+                    "latest_message": job.metadata.get("latest_message"),
+                    "last_tool": job.metadata.get("last_tool"),
+                }
+            else:
+                jobs[thread_id] = TaskStatus(
+                    task_id=thread_id,
+                    status="exited",
+                    sub_status="completed",
+                    created_at=datetime.now(timezone.utc),
+                    metadata={
+                        "finished_at": time.time(),
+                        "result": {"thread_id": thread_id, "latest_message": None, "last_tool": None},
+                        "server_logs": deque(maxlen=200),
+                    },
+                )
 
     except Exception as e:
         with jobs_lock:
@@ -419,12 +442,20 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
             if job:
                 JobUtils.append_server_log(job, f"ERROR: {repr(e)}")
                 JobUtils.append_server_log(job, traceback.format_exc())
-            jobs[thread_id] = Job(
-                thread_id=thread_id,
-                status="failed",
-                progress=job.progress if job else {},
-                error=repr(e),
-            )
+                job.status = "exited"
+                job.sub_status = "failed"
+                job.stderr = repr(e)
+                job.metadata["error"] = repr(e)
+                job.metadata["finished_at"] = time.time()
+            else:
+                jobs[thread_id] = TaskStatus(
+                    task_id=thread_id,
+                    status="exited",
+                    sub_status="failed",
+                    created_at=datetime.now(timezone.utc),
+                    stderr=repr(e),
+                    metadata={"error": repr(e), "finished_at": time.time(), "server_logs": deque(maxlen=200)},
+                )
     finally:
         # 入力ZIPはPoCのため、そのまま残す（必要なら削除に変更可能）
         pass
