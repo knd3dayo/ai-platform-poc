@@ -29,6 +29,13 @@ def run(
     dest: Path = typer.Option("./src-updated", help="成果物の同期先ディレクトリ"),
 ):
     """新しいタスクを実行します。"""
+    if sources:
+        for src in sources:
+            if not src.exists():
+                raise typer.BadParameter(f"存在しないパスです: {src}", param_hint="--src/-s")
+            if not (src.is_file() or src.is_dir()):
+                raise typer.BadParameter(f"ファイル/ディレクトリではありません: {src}", param_hint="--src/-s")
+
     async def main():
         await TaskService.run(
         actions,

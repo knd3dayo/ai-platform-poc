@@ -1,7 +1,12 @@
 #!/bin/sh
-# AI_PLATFORM_POC_ROOTが定義されていない場合はエラー
+# AI_PLATFORM_POC_ROOT が未設定 / 不正な場合はエラー
 if [ -z "$AI_PLATFORM_POC_ROOT" ]; then
   echo "❌ AI_PLATFORM_POC_ROOT is not defined. Please set it to the root directory of the project."
+  exit 1
+fi
+
+if [ ! -d "$AI_PLATFORM_POC_ROOT" ]; then
+  echo "❌ AI_PLATFORM_POC_ROOT does not exist or is not a directory: $AI_PLATFORM_POC_ROOT"
   exit 1
 fi
 
