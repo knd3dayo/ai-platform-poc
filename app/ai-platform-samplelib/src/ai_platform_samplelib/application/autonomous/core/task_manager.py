@@ -58,6 +58,14 @@ class TaskManager:
             with open(TaskManager.get_tasks_file_path(), "r") as f:
                 data = json.load(f)
                 for k, v in data.items():
+                    # 旧フォーマット互換（任意）:
+                    # 以前は trace_id を TaskStatus.metadata["trace_id"] に入れていた。
+                    # DBを作り直さない運用でも壊れないよう、読み込み時だけ第一級フィールドへ移植する。
+                    if isinstance(v, dict) and not v.get("trace_id"):
+                        md = v.get("metadata")
+                        if isinstance(md, dict) and isinstance(md.get("trace_id"), str) and md.get("trace_id"):
+                            v = {**v, "trace_id": md.get("trace_id")}
+
                     cls.tasks[k] = TaskStatus(**v)
 
 

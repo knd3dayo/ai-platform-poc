@@ -18,6 +18,8 @@ class HitlSession(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     original_request: str
+    # SV実行全体の相関ID（pause/resumeで維持する）
+    trace_id: Optional[str] = None
     source_dirs: List[str] = Field(default_factory=list)
 
     tasks: List[str]

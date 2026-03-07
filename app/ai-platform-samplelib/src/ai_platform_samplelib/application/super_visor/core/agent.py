@@ -25,6 +25,7 @@ async def run_executor_local(
     source_dir: Optional[str] = None,
     source_dirs: Optional[List[str]] = None,
     timeout: int = 300,
+    trace_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """コーディングエージェントを直接起動します。"""
     return await _run_executor_local_impl(
@@ -32,6 +33,7 @@ async def run_executor_local(
         source_dir=source_dir,
         source_dirs=source_dirs,
         timeout=timeout,
+        trace_id=trace_id,
         require_confirmation=False,
     )
 
@@ -42,6 +44,7 @@ async def run_executor_local_hitl(
     source_dir: Optional[str] = None,
     source_dirs: Optional[List[str]] = None,
     timeout: int = 300,
+    trace_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """コーディングエージェントを直接起動します（HITL: 実行前に承認確認）。"""
     return await _run_executor_local_impl(
@@ -49,6 +52,7 @@ async def run_executor_local_hitl(
         source_dir=source_dir,
         source_dirs=source_dirs,
         timeout=timeout,
+        trace_id=trace_id,
         require_confirmation=True,
     )
 
@@ -59,6 +63,7 @@ async def _run_executor_local_impl(
     source_dir: Optional[str],
     source_dirs: Optional[List[str]],
     timeout: int,
+    trace_id: Optional[str],
     require_confirmation: bool,
 ) -> Dict[str, Any]:
     task_id = str(uuid.uuid4())
@@ -76,8 +81,10 @@ async def _run_executor_local_impl(
             typer.secho(f"[HITL] 取り込み対象: {source_dir}", fg=typer.colors.YELLOW)
 
         if not typer.confirm("このサブタスクを実行しますか？"):
+            metadata: Dict[str, Any] = {"hitl": "rejected"}
             return {
                 "task_id": task_id,
+                "trace_id": trace_id,
                 "status": "exited",
                 "sub_status": "cancelled",
                 "stdout": "Cancelled by user before executor start.",
@@ -85,7 +92,7 @@ async def _run_executor_local_impl(
                 "artifacts": None,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "container_id": None,
-                "metadata": {"hitl": "rejected"},
+                "metadata": metadata,
             }
 
     typer.secho(f"\n[Executor] Task started: {task_id}", fg=typer.colors.CYAN)
@@ -110,6 +117,9 @@ async def _run_executor_local_impl(
         task_id=task_id,
         detach=True,
     )
+
+    if trace_id:
+        runner.task_status.trace_id = trace_id
     container = runner.run()
     runner.task_status.container_id = getattr(container, "id", None)
     runner.task_status.starting_foregrond()

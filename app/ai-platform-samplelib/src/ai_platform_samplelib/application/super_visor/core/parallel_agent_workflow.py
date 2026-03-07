@@ -39,6 +39,9 @@ class ParallelExecutionState(TypedDict, total=False):
     source_dirs: Optional[list[pathlib.Path]]
     zip_path: Optional[str]
 
+    # Trace context (SV実行全体の相関ID)
+    trace_id: Optional[str]
+
     # Parallel task execution
     tasks: list[str]
     task_queue: list[str]
@@ -245,9 +248,13 @@ async def run_integrated_agent_core(
     message: str,
     source_paths: Optional[list[pathlib.Path]],
     auto_approve: bool,
+    trace_id: Optional[str] = None,
     tools: list = parallel_default_tools,
         ):
     typer.secho("🤖 統合エージェント（Planning Mode）を起動中...", fg=typer.colors.MAGENTA, bold=True)
+
+    if not trace_id:
+        trace_id = str(uuid.uuid4())
     
     wf = ParallelAgentWorkflow()
     # プランナーを有効化 + 4並列ワーカーで実行
@@ -265,6 +272,7 @@ async def run_integrated_agent_core(
     initial_input: ParallelExecutionState = {
         "messages": [HumanMessage(content=user_input)],
         "auto_approve": auto_approve,
+        "trace_id": trace_id,
     }
     if len(normalized_sources) == 1:
         initial_input["source_dir"] = normalized_sources[0]
@@ -316,13 +324,13 @@ async def run_integrated_agent_core(
 
 
 def _prompt_hitl_action(*, default: str = "a") -> str:
-        """承認待ち入力（CLI）。
+    """承認待ち入力（CLI）。
 
-        Returns:
-            "a": approve (execute)
-            "s": skip/deny (record as cancelled)
-            "p": pause (save session and exit)
-        """
+    Returns:
+        "a": approve (execute)
+        "s": skip/deny (record as cancelled)
+        "p": pause (save session and exit)
+    """
 
     allowed = {"a", "s", "p"}
     while True:
@@ -367,6 +375,7 @@ async def run_integrated_agent_hitl_cli(
         session_dir: pathlib.Path | None = None,
         resume_from: pathlib.Path | None = None,
         auto_approve: bool = False,
+    trace_id: Optional[str] = None,
     ) -> pathlib.Path | None:
         """CLI向けの最小HITL（停止→保存→resume）実行。
 
@@ -380,6 +389,7 @@ async def run_integrated_agent_hitl_cli(
             session_path = resume_from
             session = HitlSession.load_json(session_path)
             original_request = session.original_request
+            trace_id = session.trace_id or trace_id or str(uuid.uuid4())
             tasks = session.tasks
             results = list(session.results)
             start_index = int(session.next_task_index or 0)
@@ -390,6 +400,7 @@ async def run_integrated_agent_hitl_cli(
             typer.secho(f"[HITL] セッションを再開します: {session_path}", fg=typer.colors.BLUE)
         else:
             session_id = str(uuid.uuid4())
+            trace_id = trace_id or str(uuid.uuid4())
             if session_dir is None:
                 session_dir = _session_default_dir(source_dirs)
             session_path = _session_file_path(session_dir, session_id)
@@ -419,6 +430,7 @@ async def run_integrated_agent_hitl_cli(
                 session_id=session_id,
                 status="paused",
                 original_request=original_request,
+                trace_id=trace_id,
                 source_dirs=[str(p.resolve()) for p in source_dirs],
                 tasks=tasks,
                 next_task_index=0,
@@ -482,6 +494,8 @@ async def run_integrated_agent_hitl_cli(
                 tool_args: Dict[str, Any] = {"prompt": prompt, "timeout": 600}
                 if source_dirs:
                     tool_args["source_dirs"] = [str(p) for p in source_dirs]
+                if trace_id:
+                    tool_args["trace_id"] = trace_id
 
                 result = await run_executor_local.ainvoke(tool_args)
 
@@ -846,6 +860,8 @@ class ParallelAgentWorkflow:
                 shared["source_dirs"] = state.get("source_dirs")
             if state.get("zip_path") is not None:
                 shared["zip_path"] = state.get("zip_path")
+            if state.get("trace_id") is not None:
+                shared["trace_id"] = state.get("trace_id")
             # 対話制御（HITL）を worker にも伝播する
             if state.get("auto_approve") is not None:
                 shared["auto_approve"] = bool(state.get("auto_approve"))
@@ -873,6 +889,7 @@ class ParallelAgentWorkflow:
             source_dirs = state.get("source_dirs")
             zip_path = state.get("zip_path")
             auto_approve = bool(state.get("auto_approve"))
+            trace_id = state.get("trace_id")
 
             # ツール選択（ローカル優先、次にzip、最後に通常）
             tool = None
@@ -885,6 +902,8 @@ class ParallelAgentWorkflow:
                 elif source_dir is not None:
                     tool_args["source_dir"] = str(source_dir)
                 tool_args["timeout"] = 600
+                if trace_id:
+                    tool_args["trace_id"] = trace_id
 
             elif "run_executor_local" in tools_by_name:
                 tool = tools_by_name["run_executor_local"]
@@ -893,6 +912,8 @@ class ParallelAgentWorkflow:
                 elif source_dir is not None:
                     tool_args["source_dir"] = str(source_dir)
                 tool_args["timeout"] = 600
+                if trace_id:
+                    tool_args["trace_id"] = trace_id
             elif "run_autonomous_agent_executor_zip" in tools_by_name and (zip_path or source_dir or source_dirs):
                 tool = tools_by_name["run_autonomous_agent_executor_zip"]
                 if zip_path:

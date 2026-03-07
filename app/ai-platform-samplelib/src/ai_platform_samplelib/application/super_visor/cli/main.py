@@ -1,6 +1,7 @@
 import asyncio
 import pathlib
 import typer
+import uuid
 from typing import Optional, Callable, Awaitable, cast
 from typing_extensions import Annotated
 from ..core.parallel_agent_workflow import run_integrated_agent_core, run_integrated_agent_hitl_cli
@@ -74,13 +75,16 @@ def run(
         else:
             session_dir = pathlib.Path.cwd() / ".sv_sessions"
 
+    trace_id = str(uuid.uuid4())
+    typer.secho(f"[super-visor] trace_id={trace_id}", fg=typer.colors.BLUE)
+
     async def _main() -> None:
         if yes:
             runner = cast(
                 Callable[[str, Optional[list[pathlib.Path]], bool], Awaitable[None]],
                 run_integrated_agent_core,
             )
-            await runner(message, source_dirs, yes)
+            await run_integrated_agent_core(message, source_dirs, yes, trace_id=trace_id)
             return
 
         # HITL（停止→resume）モード
@@ -89,6 +93,7 @@ def run(
             source_dirs=source_dirs or [],
             session_dir=session_dir,
             auto_approve=False,
+            trace_id=trace_id,
         )
 
     asyncio.run(_main())

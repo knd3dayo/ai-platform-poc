@@ -64,6 +64,9 @@ class AutonomousAgentRequest(BaseModel):
 
 class TaskStatus(BaseModel):
     task_id: str
+    # SV実行全体の相関ID（task_idとは別）。
+    # executorのtask_idはワークスペース/compose名衝突回避のためサブタスク単位で一意化されうる。
+    trace_id: Optional[str] = None
     status: Optional[Literal[
         "pending", "running", "exited"
         ]] = None
