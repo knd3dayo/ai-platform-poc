@@ -10,6 +10,7 @@ import os
 from collections import deque
 import zipfile
 from datetime import datetime, timezone
+import uuid
 
 from langchain_core.messages import AIMessage
 from langchain_core.messages import HumanMessage
@@ -20,11 +21,12 @@ from langgraph.graph.message import add_messages
 from langgraph.types import Send
 
 from ...autonomous.model.models import TaskStatus
+from ..model.hitl_session import HitlSession
 from ..model.models import ServerConfig, jobs_lock, jobs
 from ..core.utils import JobUtils, LLMUtils
 from .agent import LangGraphNodes
 from .tools import Tools, ToolNode
-from .agent import run_executor_local
+from .agent import run_executor_local, run_executor_local_hitl
 from ai_platform_samplelib.event_bus import get_event_bus
 
 
@@ -44,6 +46,9 @@ class ParallelExecutionState(TypedDict, total=False):
     task: str
     results: Annotated[list[Dict[str, Any]], operator.add]
     raw_summary: str
+
+    # CLI controls
+    auto_approve: bool
 
 
 def _extract_tasks_from_plan_text(plan_text: str, *, max_tasks: int = 50) -> list[str]:
@@ -183,8 +188,37 @@ def _extract_tasks_from_plan_text(plan_text: str, *, max_tasks: int = 50) -> lis
 # ==========================================
 import typer
 # ... 他のインポート ...
+# LLM にバインドする「実行ツール」は対話プロンプトを出さないものだけに限定する。
+# HITL 版は CLI の並列ワーカーが直接呼ぶ用途に閉じる（サーバ等で誤ってハングしないように）。
 local_tools = [run_executor_local]
+
+# 並列ワーカー用（HITL版も含める）
+parallel_default_tools = [run_executor_local, run_executor_local_hitl]
+
 local_tool_node = ToolNode(local_tools)
+
+
+def _build_user_input_with_context(message: str, source_dirs: list[pathlib.Path]) -> str:
+    user_input = message
+    normalized_sources = [p for p in source_dirs if isinstance(p, pathlib.Path)]
+
+    if len(normalized_sources) == 1:
+        source_path = normalized_sources[0]
+        user_input += (
+            f"\n\n[Context] 作業ディレクトリ(ホスト): {source_path.resolve()}"
+            "\n[Context] executor コンテナ内の作業ディレクトリ: /workspace"
+            "\n[Context] タスクでは /workspace からのパスで参照してください。"
+        )
+    elif len(normalized_sources) >= 2:
+        listed = "\n".join([f"- {p.resolve()}" for p in normalized_sources])
+        user_input += (
+            "\n\n[Context] 取り込み対象(ホスト)が複数指定されています:"
+            f"\n{listed}"
+            "\n[Context] executor コンテナ内では /workspace/inputs/<name>/... に配置されます。"
+            "\n[Context] タスクでは /workspace からのパスで参照してください。"
+        )
+
+    return user_input
 
 
 def _safe_extract_zip(zip_path: str, dest_dir: pathlib.Path) -> pathlib.Path:
@@ -208,38 +242,29 @@ def _safe_extract_zip(zip_path: str, dest_dir: pathlib.Path) -> pathlib.Path:
     return dest_dir
 
 async def run_integrated_agent_core(
-    message: str, source_paths: Optional[list[pathlib.Path]], auto_approve: bool, tools: list = local_tools
+    message: str,
+    source_paths: Optional[list[pathlib.Path]],
+    auto_approve: bool,
+    tools: list = parallel_default_tools,
         ):
     typer.secho("🤖 統合エージェント（Planning Mode）を起動中...", fg=typer.colors.MAGENTA, bold=True)
     
     wf = ParallelAgentWorkflow()
     # プランナーを有効化 + 4並列ワーカーで実行
-    graph = wf.create_parallel_graph(include_planner=True, tools=tools, max_parallel=4).compile()
+    # HITL(承認待ち)がある場合は並列度を落として、対話が混線しないようにする。
+    max_parallel = 4 if auto_approve else 1
+    graph = wf.create_parallel_graph(include_planner=True, tools=tools, max_parallel=max_parallel).compile()
 
     normalized_sources: list[pathlib.Path] = []
     for p in (source_paths or []):
         if isinstance(p, pathlib.Path):
             normalized_sources.append(p)
 
-    user_input = message
-    if len(normalized_sources) == 1:
-        source_path = normalized_sources[0]
-        user_input += (
-            f"\n\n[Context] 作業ディレクトリ(ホスト): {source_path.resolve()}"
-            "\n[Context] executor コンテナ内の作業ディレクトリ: /workspace"
-            "\n[Context] タスクでは /workspace からのパスで参照してください。"
-        )
-    elif len(normalized_sources) >= 2:
-        listed = "\n".join([f"- {p.resolve()}" for p in normalized_sources])
-        user_input += (
-            "\n\n[Context] 取り込み対象(ホスト)が複数指定されています:"
-            f"\n{listed}"
-            "\n[Context] executor コンテナ内では /workspace/inputs/<name>/... に配置されます。"
-            "\n[Context] タスクでは /workspace からのパスで参照してください。"
-        )
+    user_input = _build_user_input_with_context(message, normalized_sources)
 
     initial_input: ParallelExecutionState = {
         "messages": [HumanMessage(content=user_input)],
+        "auto_approve": auto_approve,
     }
     if len(normalized_sources) == 1:
         initial_input["source_dir"] = normalized_sources[0]
@@ -288,6 +313,215 @@ async def run_integrated_agent_core(
             if latest_msg.content:
                 typer.secho("\n🏁 最終報告:", fg=typer.colors.GREEN, bold=True)
                 typer.echo(latest_msg.content)
+
+
+def _prompt_hitl_action(*, default: str = "a") -> str:
+        """承認待ち入力（CLI）。
+
+        Returns:
+            "a": approve (execute)
+            "s": skip/deny (record as cancelled)
+            "p": pause (save session and exit)
+        """
+
+    allowed = {"a", "s", "p"}
+    while True:
+        raw = typer.prompt("実行しますか？ [a]承認 / [s]却下 / [p]後で再開", default=default)
+        val = (raw or "").strip().lower()
+        if val in allowed:
+            return val
+        typer.secho("a/s/p のいずれかを入力してください。", fg=typer.colors.RED)
+
+
+def _session_default_dir(source_dirs: list[pathlib.Path]) -> pathlib.Path:
+    # source_dirs[0] を優先し、無ければ cwd 配下
+    base = (source_dirs[0] if source_dirs else pathlib.Path.cwd()).resolve()
+    return base / ".sv_sessions"
+
+
+def _session_file_path(session_dir: pathlib.Path, session_id: str) -> pathlib.Path:
+    return session_dir / f"sv_hitl_{session_id}.json"
+
+
+def _raw_summary_from_results(*, results: list[dict], max_parallel: int) -> str:
+    lines: list[str] = []
+    lines.append(f"逐次実行の結果サマリ (max_parallel={max_parallel}):")
+    for i, item in enumerate(results, start=1):
+        task = item.get("task")
+        tool_name = item.get("tool")
+        elapsed = item.get("elapsed_sec")
+        res = item.get("result")
+        status = res.get("status") if isinstance(res, dict) else None
+        stdout = res.get("stdout") if isinstance(res, dict) else None
+        tail = ""
+        if isinstance(stdout, str) and stdout.strip():
+            tail = stdout.strip().splitlines()[-1]
+        lines.append(f"{i}. task={task!s} tool={tool_name!s} elapsed={elapsed!s}s status={status!s} last={tail!s}")
+    return "\n".join(lines)
+
+
+async def run_integrated_agent_hitl_cli(
+        *,
+        message: str,
+        source_dirs: list[pathlib.Path],
+        session_dir: pathlib.Path | None = None,
+        resume_from: pathlib.Path | None = None,
+        auto_approve: bool = False,
+    ) -> pathlib.Path | None:
+        """CLI向けの最小HITL（停止→保存→resume）実行。
+
+        - 計画作成: LLM(planner)
+        - 実行: サブタスクを逐次実行
+        - HITL: サブタスクごとに a/s/p を選択
+        - p の場合はセッションJSONを書き出して終了し、パスを返す
+        """
+
+        if resume_from is not None:
+            session_path = resume_from
+            session = HitlSession.load_json(session_path)
+            original_request = session.original_request
+            tasks = session.tasks
+            results = list(session.results)
+            start_index = int(session.next_task_index or 0)
+            # source_dirs はセッション優先（当時の環境を再現）
+            if session.source_dirs:
+                source_dirs = [pathlib.Path(p) for p in session.source_dirs]
+            session_dir = session_path.parent
+            typer.secho(f"[HITL] セッションを再開します: {session_path}", fg=typer.colors.BLUE)
+        else:
+            session_id = str(uuid.uuid4())
+            if session_dir is None:
+                session_dir = _session_default_dir(source_dirs)
+            session_path = _session_file_path(session_dir, session_id)
+
+            original_request = _build_user_input_with_context(message, source_dirs)
+
+            typer.secho("🤖 統合エージェント（HITL CLI）を起動中...", fg=typer.colors.MAGENTA, bold=True)
+            plan_state: MessagesState = {"messages": [HumanMessage(content=original_request)]}
+            planned = await LangGraphNodes.planner_node(plan_state)
+            plan_msg = planned["messages"][-1]
+            plan_text = getattr(plan_msg, "content", "") or ""
+            typer.secho("\n📋 --- 提案された実行計画 ---", fg=typer.colors.YELLOW, bold=True)
+            typer.echo(plan_text)
+
+            tasks = _extract_tasks_from_plan_text(plan_text)
+            if not tasks:
+                typer.secho("[HITL] タスクを抽出できませんでした。", fg=typer.colors.RED)
+                return None
+
+            if not typer.confirm("\n上記計画で実行を開始しますか？"):
+                typer.secho("🚫 実行はキャンセルされました。", fg=typer.colors.RED, bold=True)
+                return None
+
+            results = []
+            start_index = 0
+            session = HitlSession(
+                session_id=session_id,
+                status="paused",
+                original_request=original_request,
+                source_dirs=[str(p.resolve()) for p in source_dirs],
+                tasks=tasks,
+                next_task_index=0,
+                results=[],
+            )
+
+        # 逐次実行
+        for idx in range(start_index, len(tasks)):
+            task = (tasks[idx] or "").strip()
+            if not task:
+                continue
+
+            typer.secho(f"\n🧩 サブタスク {idx+1}/{len(tasks)}: {task}", fg=typer.colors.CYAN, bold=True)
+
+            prompt = (
+                "あなたは実行担当の自律型コーディングエージェントです。\n"
+                "次のサブタスクを実行してください。必要ならファイルを読み、結果を日本語で報告してください。\n\n"
+                f"[サブタスク]\n{task}\n\n"
+                f"[元の依頼]\n{original_request}\n"
+            )
+
+            if auto_approve:
+                action = "a"
+            else:
+                typer.secho("[HITL] ここで人間の判断が入ります。", fg=typer.colors.YELLOW)
+                action = _prompt_hitl_action(default="a")
+
+            if action == "p":
+                # 次のサブタスクから再開
+                session.next_task_index = idx
+                session.results = results
+                session.status = "paused"
+                session.save_json(session_path)
+                typer.secho(f"[HITL] 一時停止しました。再開ファイル: {session_path}", fg=typer.colors.YELLOW, bold=True)
+                return session_path
+
+            started_at = time.time()
+            tool_name = None
+
+            if action == "s":
+                # 実行しない
+                ended_at = time.time()
+                results.append(
+                    {
+                        "task": task,
+                        "started_at": started_at,
+                        "ended_at": ended_at,
+                        "elapsed_sec": round(ended_at - started_at, 3),
+                        "tool": None,
+                        "result": {
+                            "status": "exited",
+                            "sub_status": "cancelled",
+                            "stdout": "Skipped by user (HITL deny).",
+                            "stderr": None,
+                        },
+                    }
+                )
+            else:
+                # 実行する
+                tool_name = getattr(run_executor_local, "name", "run_executor_local")
+                tool_args: Dict[str, Any] = {"prompt": prompt, "timeout": 600}
+                if source_dirs:
+                    tool_args["source_dirs"] = [str(p) for p in source_dirs]
+
+                result = await run_executor_local.ainvoke(tool_args)
+
+                ended_at = time.time()
+                results.append(
+                    {
+                        "task": task,
+                        "started_at": started_at,
+                        "ended_at": ended_at,
+                        "elapsed_sec": round(ended_at - started_at, 3),
+                        "tool": tool_name,
+                        "result": result,
+                    }
+                )
+
+            # 進捗を都度保存（落ちても再開できるように）
+            session.next_task_index = idx + 1
+            session.results = results
+            session.status = "paused"
+            session.save_json(session_path)
+
+        # 完了
+        raw_summary = _raw_summary_from_results(results=results, max_parallel=1)
+        summary_msg = await LangGraphNodes.planner_summarize_results(
+            original_request=original_request,
+            results=results,
+            raw_summary=raw_summary,
+        )
+        final_text = (getattr(summary_msg, "content", "") or "").strip()
+        if raw_summary:
+            final_text = f"{final_text}\n\n---\n[詳細サマリ]\n{raw_summary}".strip()
+
+        typer.secho("\n🏁 最終報告:", fg=typer.colors.GREEN, bold=True)
+        typer.echo(final_text)
+
+        session.status = "completed"
+        session.next_task_index = len(tasks)
+        session.results = results
+        session.save_json(session_path)
+        return None
 
 def _extract_tool_payloads_from_messages(messages: List[Any]) -> List[Dict[str, Any]]:
     """LangGraph の state.messages から tool 実行結果っぽいものを抽出する（PoC）。
@@ -612,6 +846,9 @@ class ParallelAgentWorkflow:
                 shared["source_dirs"] = state.get("source_dirs")
             if state.get("zip_path") is not None:
                 shared["zip_path"] = state.get("zip_path")
+            # 対話制御（HITL）を worker にも伝播する
+            if state.get("auto_approve") is not None:
+                shared["auto_approve"] = bool(state.get("auto_approve"))
 
             return [Send("worker", {**shared, "task": t}) for t in batch]
 
@@ -635,12 +872,21 @@ class ParallelAgentWorkflow:
             source_dir = state.get("source_dir")
             source_dirs = state.get("source_dirs")
             zip_path = state.get("zip_path")
+            auto_approve = bool(state.get("auto_approve"))
 
             # ツール選択（ローカル優先、次にzip、最後に通常）
             tool = None
             tool_args: Dict[str, Any] = {"prompt": prompt}
 
-            if "run_executor_local" in tools_by_name:
+            if not auto_approve and "run_executor_local_hitl" in tools_by_name:
+                tool = tools_by_name["run_executor_local_hitl"]
+                if source_dirs is not None:
+                    tool_args["source_dirs"] = [str(p) for p in source_dirs]
+                elif source_dir is not None:
+                    tool_args["source_dir"] = str(source_dir)
+                tool_args["timeout"] = 600
+
+            elif "run_executor_local" in tools_by_name:
                 tool = tools_by_name["run_executor_local"]
                 if source_dirs is not None:
                     tool_args["source_dirs"] = [str(p) for p in source_dirs]

@@ -3,7 +3,7 @@ import pathlib
 import typer
 from typing import Optional, Callable, Awaitable, cast
 from typing_extensions import Annotated
-from ..core.parallel_agent_workflow import run_integrated_agent_core
+from ..core.parallel_agent_workflow import run_integrated_agent_core, run_integrated_agent_hitl_cli
 
 # インポートパスは環境に合わせて適宜調整してください
 
@@ -39,6 +39,16 @@ def run(
         ),
     ] = None,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="計画承認をスキップ")] = False,
+    session_dir: Annotated[
+        Optional[pathlib.Path],
+        typer.Option(
+            "--session-dir",
+            exists=False,
+            file_okay=False,
+            dir_okay=True,
+            help="HITL一時停止ファイルの保存先（省略時は推測したリポジトリ配下 .sv_sessions）",
+        ),
+    ] = None,
 ):
     """
     計画を立て、ユーザーの承認を得てから自律エージェントを実行します。
@@ -57,12 +67,50 @@ def run(
                 " 必要なら -s でリポジトリルートを指定してください。",
                 fg=typer.colors.YELLOW,
             )
+    if session_dir is None:
+        inferred = _infer_repo_root(pathlib.Path.cwd())
+        if inferred is not None:
+            session_dir = inferred / ".sv_sessions"
+        else:
+            session_dir = pathlib.Path.cwd() / ".sv_sessions"
+
     async def _main() -> None:
-        runner = cast(
-            Callable[[str, Optional[list[pathlib.Path]], bool], Awaitable[None]],
-            run_integrated_agent_core,
+        if yes:
+            runner = cast(
+                Callable[[str, Optional[list[pathlib.Path]], bool], Awaitable[None]],
+                run_integrated_agent_core,
+            )
+            await runner(message, source_dirs, yes)
+            return
+
+        # HITL（停止→resume）モード
+        await run_integrated_agent_hitl_cli(
+            message=message,
+            source_dirs=source_dirs or [],
+            session_dir=session_dir,
+            auto_approve=False,
         )
-        await runner(message, source_dirs, yes)
+
+    asyncio.run(_main())
+
+
+@app.command()
+def resume(
+    session_file: Annotated[
+        pathlib.Path,
+        typer.Argument(exists=True, dir_okay=False, file_okay=True, help="HITLセッションJSONのパス"),
+    ],
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="残りサブタスクを全て自動承認")]=False,
+):
+    """HITLで一時停止したセッションを再開する。"""
+
+    async def _main() -> None:
+        await run_integrated_agent_hitl_cli(
+            message="",
+            source_dirs=[],
+            resume_from=session_file,
+            auto_approve=yes,
+        )
 
     asyncio.run(_main())
     

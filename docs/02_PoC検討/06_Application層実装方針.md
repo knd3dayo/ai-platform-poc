@@ -35,7 +35,8 @@ AIエージェントの一般的な用語として「スーパーバイザー」
    * 自律型エージェントの処理はPythonから行うサンプル実装[ai_platform_samplelib/application/autonomous](../../app/ai-platform-samplelib/src/ai_platform_samplelib/application/autonomous)を使用することで実現する。
    * SV型エージェントのサンプル実装は[ai_platform_samplelib/application/super_visor](../../app/ai-platform-samplelib/src/ai_platform_samplelib/application/super_visor/)に作成する。
    * SV型エージェントの検証は、まずコマンドライン（`ai_platform_samplelib.application.super_visor.cli.main`）から実行する。
-   * コマンドライン起動用のテストクライアント(シェルスクリプト)を[test/application/super-visor](../test/application/super-visor)に配置する。
+   * コマンドライン起動用のテストクライアント(シェルスクリプト)を[test/application/super-visor](../../test/application/super-visor)に配置する。
+   * CLIは `run` / `resume` を提供する。`-y/--yes` 指定時は承認をスキップし、未指定時はサブタスク単位で承認/停止（セッション保存）を行う。
 
 * 重要
   * SV型エージェントで設定した環境変数が自律型エージェントに確実に渡されること。
@@ -46,19 +47,26 @@ AIエージェントの一般的な用語として「スーパーバイザー」
 3. 「トレースID = task_id」伝播（SV→自律）が未達（thread_id/task_id が分断）
    * 方針/期待: SVが自律型へ渡す task_id は、全体で一意な trace_id を使用する。
    * 現状:
-     * SV APIはサーバ側で `thread_id` を採番して返す（`uuid4()`）。
-     * Executor API呼び出しでは `task_id` は Executor 側が採番し、レスポンスで返す。
+       * SV（PoCはCLI実行）は処理単位のIDを採番するが、Executor 実行の `task_id` は別採番になっており統一されていない。
    * 影響: trace_id を task_id として統一しづらく、横断トレーシング/運用の一貫性が落ちる。
 
 4. `TaskStatus` の逐次通知がSV経路に乗っていない
    * 方針/期待: 自律型エージェントの処理状況を `TaskStatus` として逐次受け取り、ユーザーまたは非同期連携基盤へ通知する。
-   * 現状: SV側の状態管理は `TaskStatus` に統一済み（SV APIも `TaskStatus` を返す）。一方で、SV→ユーザー/非同期連携基盤への“逐次”通知（Event Bus 等）自体は未実装で、現状はポーリング（`/api/status/{thread_id}`）が中心。
-   * 影響: “逐次”通知（Event Bus等）に寄せる場合は、通知先（Webhook/Event Bus）とイベント粒度（status/sub_status/ログ/成果物）の追加設計/実装が必要。
+    * 現状:
+       * SV側の状態管理は `TaskStatus` に統一済み。ただしSV APIは削除しており、ユーザー向け取得手段は現状CLI表示が中心。
+       * SV内部では `TaskStatus` を `publish_task_status()` で発行している（例: started/configured/progress/finished/error）。ただしEventBusは PoC 向けモック（`noop/stdout/memory`）のみで、既定値は `noop`（環境変数 `SV_EVENT_BUS_TYPE` 未設定の場合）。そのため PoC の標準実行経路（CLI / テストクライアント）では、外部の非同期連携基盤へは実質的に通知されない。
+       * なお “逐次通知の観測” 自体は、`SV_EVENT_BUS_TYPE=stdout` により標準出力へJSONイベントとして出せる（外部Pushではなくローカル観測）。
+      * Webhook送信などのデモは別途検討対象だが、`TaskStatus` の逐次通知として統合された実装は未整備。
+    * 影響:
+       * “逐次通知（非同期連携基盤へPush）”に寄せる場合は、通知先（Webhook/Event Bus）とイベント粒度（status/sub_status/ログ/成果物）を設計し、EventBus の実装（例: Redis/Kafka/HTTP など）と設定注入（compose/env）を追加する必要がある。
 
-5. HITL（Human in the loop）はデモ実装はあるが、コーディングエージェント実行と統合されていない
+5. HITL（Human in the loop）はCLI統合は進んだが、非同期HITLは計画境界まで
    * 方針/期待: 「もっと情報が必要」「この後どうしますか？」等の回答に対し、ユーザー入力待ち（非同期HITL）を実装する。
-   * 現状: `interrupt_before=["tools"]` と `/api/resume` によるHITL相当のAPIはあるが、ワークフローは送金デモツール等を使うPoCで、Executor呼び出し（コーディングエージェント起動）と直結していない。
-   * 影響: “コーディング実行の途中で承認待ち→再開”を目指す場合、ワークフロー統合が必要。
+   * 現状:
+       * PoCはCLI実行に寄せており、実行前承認（HITL相当）はCLI側に統合済み（`-y/--yes` でスキップ可）。
+       * `-y` 未指定時は、計画から抽出したサブタスク単位で「承認/却下/一時停止（セッション保存）」を行い、一時停止した場合はセッションJSONを保存して `resume` で続きから再開できる（保存先は `--session-dir`、省略時は `.sv_sessions`）。
+       * ただし現状の pause/resume は「サブタスク実行の境界」での停止であり、コーディングエージェント（executor）実行の“途中”での入力待ち・再開（コンテナ/作業状態のチェックポイント復元）までは扱っていない。
+   * 影響: “コーディング実行の途中で承認待ち→再開”を目指す場合、executor の中断/再開戦略（チェックポイント、workspace状態、コンテナ継続/再起動）と、ユーザー入力チャネル（CLI/GUI/API）を含めたワークフロー統合が必要。
 
 6. MCP認証（Bearer等）の「受け取り→workspace内設定反映」の経路が確認できない
    * 方針/期待: Bearer等を引数/環境変数で受け取り、workspace 内の MCP 定義へ反映する。
@@ -75,7 +83,7 @@ AIエージェントの一般的な用語として「スーパーバイザー」
 * サンプル実装の方針
    * Dockerコンテナのサンプル実装を[all-in-on-image](../../app/docker/autonomous-agent-executor/images/all-in-on-image)に作成する。
    * Dockerコンテナの操作をPythonから行うサンプル実装を[ai_platform_samplelib/application/autonomous](../../app/ai-platform-samplelib/src/ai_platform_samplelib/application/autonomous)に作成する。
-   * Dockerコンテナの操作をPythonから行うサンプル実装のテストクライアント(シェルスクリプト)を[test/application/autonomous](../test/application/autonomous)に配置する。
+   * Dockerコンテナの操作をPythonから行うサンプル実装のテストクライアント(シェルスクリプト)を[test/application/autonomous](../../test/application/autonomous)に配置する。
 
 
 #### 方針 vs 実装 整合性レビュー（自律型エージェントSandbox）

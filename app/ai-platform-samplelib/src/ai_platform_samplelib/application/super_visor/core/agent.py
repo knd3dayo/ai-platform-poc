@@ -3,6 +3,7 @@ import pathlib
 import uuid
 import asyncio
 import typer
+from datetime import datetime, timezone
 
 from langchain_core.messages import SystemMessage
 from langchain_core.messages import HumanMessage
@@ -26,7 +27,67 @@ async def run_executor_local(
     timeout: int = 300,
 ) -> Dict[str, Any]:
     """コーディングエージェントを直接起動します。"""
+    return await _run_executor_local_impl(
+        prompt=prompt,
+        source_dir=source_dir,
+        source_dirs=source_dirs,
+        timeout=timeout,
+        require_confirmation=False,
+    )
+
+
+@tool
+async def run_executor_local_hitl(
+    prompt: str,
+    source_dir: Optional[str] = None,
+    source_dirs: Optional[List[str]] = None,
+    timeout: int = 300,
+) -> Dict[str, Any]:
+    """コーディングエージェントを直接起動します（HITL: 実行前に承認確認）。"""
+    return await _run_executor_local_impl(
+        prompt=prompt,
+        source_dir=source_dir,
+        source_dirs=source_dirs,
+        timeout=timeout,
+        require_confirmation=True,
+    )
+
+
+async def _run_executor_local_impl(
+    *,
+    prompt: str,
+    source_dir: Optional[str],
+    source_dirs: Optional[List[str]],
+    timeout: int,
+    require_confirmation: bool,
+) -> Dict[str, Any]:
     task_id = str(uuid.uuid4())
+
+    if require_confirmation:
+        preview = (prompt or "").strip().splitlines()[:30]
+        preview_text = "\n".join(preview)
+        typer.secho("\n[HITL] これから executor を起動します。", fg=typer.colors.YELLOW, bold=True)
+        if preview_text:
+            typer.secho("[HITL] 実行プロンプト（先頭のみ）:", fg=typer.colors.YELLOW)
+            typer.echo(preview_text)
+        if source_dirs:
+            typer.secho(f"[HITL] 取り込み対象: {source_dirs}", fg=typer.colors.YELLOW)
+        elif source_dir:
+            typer.secho(f"[HITL] 取り込み対象: {source_dir}", fg=typer.colors.YELLOW)
+
+        if not typer.confirm("このサブタスクを実行しますか？"):
+            return {
+                "task_id": task_id,
+                "status": "exited",
+                "sub_status": "cancelled",
+                "stdout": "Cancelled by user before executor start.",
+                "stderr": None,
+                "artifacts": None,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "container_id": None,
+                "metadata": {"hitl": "rejected"},
+            }
+
     typer.secho(f"\n[Executor] Task started: {task_id}", fg=typer.colors.CYAN)
 
     normalized_source_dir: Optional[pathlib.Path] = None
