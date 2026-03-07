@@ -83,7 +83,7 @@ class TyperActions(AbstractActions) :
             if typer.confirm("⚠️ 中断しました。コンテナを停止して削除しますか？", default=True):
                 await TaskManager.cancel_task(tid)
                 self.console.print(f"🛑 タスク {tid} をキャンセルしました。")
-                status_data.status = "cancelled"  # キャンセルフラグを立てる（必要に応じて）
+                status_data.cancelled()  # キャンセルフラグを立てる（必要に応じて）
         return status_data
 
     def after_complete_action(

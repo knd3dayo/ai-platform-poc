@@ -8,8 +8,9 @@ class CodingAgentConfig(BaseModel):
 
     env_file: ClassVar[str] = ".env"  # デフォルトの環境変数ファイルパス
 
-    llm_base_url: str = Field(..., description="Base URL for the LLM API")
+    llm_provider: str = Field(..., description="LLMプロバイダーの名前（例: openai, azure, anthropic）")
     llm_model: str = Field(..., description="LLM model to use (e.g., gpt-4o)")
+    llm_base_url: Optional[str] = Field(None, description="Base URL for the LLM API")
     workspace_root: str = Field(default="/tmp/autonomous_agent_tasks", description="Root directory for task workspaces")
     
     @classmethod
@@ -20,8 +21,9 @@ class CodingAgentConfig(BaseModel):
     def from_env(cls):
         load_dotenv(cls.env_file)  # 指定された環境変数ファイルをロード
         params = {
-            "llm_base_url": os.getenv("LLM_BASE_URL", "http://localhost:4000"),
+            "llm_provider": os.getenv("LLM_PROVIDER", "openai"),
             "llm_model": os.getenv("LLM_MODEL", "gpt-4o"),
+            "llm_base_url": os.getenv("LLM_BASE_URL"),
             "workspace_root": os.getenv("WORKSPACE_ROOT", "/tmp/autonomous_agent_tasks")
         }
         return cls(**params)
@@ -61,11 +63,47 @@ class AutonomousAgentRequest(BaseModel):
 
 class TaskStatus(BaseModel):
     task_id: str
-    status: Literal["running", "completed", "failed", "timeout", "cancelled"]  # running, completed, failed, timeout, cancelled
-    sub_status: Optional[Literal["running-foreground", "running-background","pulling", "starting", "exited"]] = None  # より詳細な状態（例: "pulling", "starting", "running", "exited"など）
+    status: Optional[Literal[
+        "pending", "running", "exited"
+        ]] = None
+    sub_status: Optional[Literal[
+        "not-started", "running-foreground", "running-background","pulling", "starting", "failed", "timeout", "cancelled", "completed"
+        ]] = None  # より詳細な状態（例: "pulling", "starting", "running", "exited"など）
     stdout: Optional[str] = None
     stderr: Optional[str] = None
     artifacts: Optional[List[str]] = None
-    created_at: datetime
+    created_at: Optional[datetime] = None
     container_id: Optional[str] = None
 
+    def pendding(self):
+        self.status = "pending"
+        self.sub_status = "not-started"
+
+    def starting_foregrond(self):
+        self.status = "running"
+        self.sub_status = "running-foreground"
+    
+    def starting_background(self):
+        self.status = "running"
+        self.sub_status = "running-background"
+    
+    def timeouted(self, timeout: int):
+        self.status = "exited"
+        self.sub_status = "timeout"
+        self.stderr=f"Task timed out after {timeout} seconds"
+    
+    def completed(self):
+        self.status = "exited"
+        self.sub_status = "completed"
+    
+    def failed(self):
+        self.status = "exited"
+        self.sub_status = "failed"
+
+    def cancelled(self):
+        self.status = "exited"
+        self.sub_status = "cancelled"
+        
+    def is_exited(self) -> bool:
+        return self.status == "exited"
+    

@@ -26,28 +26,16 @@ def run(
     dest: Path = typer.Option("./src-updated", help="成果物の同期先ディレクトリ"),
 ):
     """新しいタスクを実行します。"""
-    TaskManager.load_tasks()
     async def main():
-        params = {
-            "background_tasks": None,
-            "prompt": prompt,
-            "task_id": task_id,
-        }
-        if src and src.exists():
-            params["source_paths"] = src
-
-        runner = await CodingAgentRunner.create_runner(**params)
-        async for status in TaskService.run_task(runner, timeout, dest, wait):
-            if status.sub_status == "starting":
-                actions.after_start_task_action(status.task_id)
-            elif status.sub_status == "running-background":
-                actions.after_start_detach_task_action(status.task_id)
-                break  # バックグラウンドで走らせる場合はここでループを抜ける
-            elif status.status == "completed":
-                actions.after_complete_action(runner, dest)
-                break  # 完了したらループを抜ける
-            
-            await actions.progress_action(status.task_id)    
+        await TaskService.run(
+        actions,
+        prompt,
+        src,
+        task_id,
+        timeout,
+        wait,
+        dest
+    )
         
     asyncio.run(main())
 

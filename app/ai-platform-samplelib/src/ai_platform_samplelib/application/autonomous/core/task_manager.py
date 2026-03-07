@@ -29,8 +29,8 @@ class TaskManager:
         return cls.tasks.get(task_id)
     
     @classmethod
-    def upsert_task(cls, task_id: str, status: TaskStatus):
-        cls.tasks[task_id] = status
+    def upsert_task(cls, status: TaskStatus):
+        cls.tasks[status.task_id] = status
         cls.save_tasks()
 
     @classmethod
@@ -69,8 +69,6 @@ class TaskManager:
             # self.actions.after_task_not_found_action()
             return []
         
-        table = [[tid, t.status, t.created_at.strftime("%Y-%m-%d %H:%M")] 
-                 for tid, t in tasks.items()]
         return list(tasks.values())
 
     @classmethod
@@ -116,13 +114,8 @@ class TaskManager:
             try:
                 # whales で強制終了
                 whales.container.kill(task.container_id)
-                TaskManager.upsert_task(task_id, TaskStatus(
-                    task_id=task_id,
-                    status="cancelled",
-                    created_at=task.created_at,
-                    container_id=task.container_id,
-                    stderr=task.stderr
-                ))
+                task.cancelled()
+                TaskManager.upsert_task(task)
                 return {"message": f"Task {task_id} cancelled."}
             except Exception as e:
                 return {"message": f"Cancel failed: {str(e)}"}

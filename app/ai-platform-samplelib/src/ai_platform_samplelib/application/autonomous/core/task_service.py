@@ -25,7 +25,7 @@ logger = get_application_logger()
 from ..core.coding_agent_runner import CodingAgentRunner
 from ..model.models import ComposeConfig, TaskStatus, CodingAgentConfig
 from ..core.task_manager import TaskManager
-
+from ..core.abstract_actions import AbstractActions
 # --- Logic Layer: Typerに依存しないサービス ---
 class TaskService:
     def __init__(self):
@@ -81,13 +81,7 @@ class TaskService:
                     container.kill()
                     task = TaskManager.get_task(runner.task_id)
                     if task:
-                        TaskManager.upsert_task(runner.task_id, TaskStatus(
-                            task_id=runner.task_id,
-                            status="failed",
-                            created_at=task.created_at,
-                            container_id=container.id,
-                            stderr=f"Task timed out after {timeout} seconds"
-                        ))
+                        task.timeouted(timeout)
                     return
                 await asyncio.sleep(1)
 
@@ -100,52 +94,78 @@ class TaskService:
             artifacts = [str(f.relative_to(runner.workspace)) for f in runner.workspace.glob("**/*") if f.is_file()]
             task = TaskManager.get_task(runner.task_id)
             if task:
-                task.status = "completed" if exit_code == 0 else "failed"
+                if exit_code == 0:
+                    task.completed()
+                else:
+                    task.failed()
                 task.stdout = out_logs
                 task.artifacts = artifacts
-                TaskManager.upsert_task(runner.task_id, task)
+                TaskManager.upsert_task(task)
 
         except Exception as e:
             task = TaskManager.get_task(runner.task_id)
             if task:
-                TaskManager.upsert_task(runner.task_id, TaskStatus(
-                    task_id=runner.task_id,
-                    status="failed",
-                    created_at=task.created_at,
-                    container_id=container.id,
-                    stderr=f"Monitor Error: {str(e)}"
-                ))
+                task.failed()
+                task.stderr = f"Monitor Error: {str(e)}"
+                TaskManager.upsert_task(task)
         finally:
             # 既に remove=True で起動しているが、念のため
             try: container.remove(force=True)
             except: pass
 
+    @classmethod
+    async def run(
+            cls,
+            actions: AbstractActions,
+            prompt: str,
+            src: Optional[Path],
+            task_id: Optional[str] ,
+            timeout: int = 300,
+            wait: bool = True,
+            dest: Path = Path("./src-updated"),
+    ):
+        """新しいタスクを実行します。"""
+        TaskManager.load_tasks()
+        params = {
+            "background_tasks": None,
+            "prompt": prompt,
+            "task_id": task_id,
+        }
+        if src and src.exists():
+            params["source_paths"] = src
+
+        runner = await CodingAgentRunner.create_runner(**params)
+        async for status in TaskService.run_task(runner, timeout, dest, wait):
+            if status.sub_status == "starting":
+                actions.after_start_task_action(status.task_id)
+            elif status.sub_status == "running-background":
+                actions.after_start_detach_task_action(status.task_id)
+                break  # バックグラウンドで走らせる場合はここでループを抜ける
+            elif status.status == "completed":
+                actions.after_complete_action(runner, dest)
+                break  # 完了したらループを抜ける
+            
+            await actions.progress_action(status.task_id)    
+        
 
     @classmethod
     async def run_task(cls, runner: CodingAgentRunner,
                        timeout: int, dest: Path, wait: bool) -> AsyncGenerator[TaskStatus, None]:
         """タスクの開始、監視、完了後の同期までを一括管理"""
-        tid = runner.task_id
-        task_status = TaskManager.get_task(tid)
-        if task_status is None:
-            raise RuntimeError(f"Task {tid} not found after starting in detach mode")
+        runner.run()
         
-        task_status.sub_status = "starting"
-        TaskManager.upsert_task(tid, task_status)
-        yield task_status
-        # self.actions.after_start_task_action(tid)
-
         if wait:
-            task_status.sub_status = "running-foreground"
-            TaskManager.upsert_task(tid, task_status)
+            runner.task_status.starting_foregrond()
+            TaskManager.upsert_task(runner.task_status)
+            yield runner.task_status
         else:
             # self.actions.after_start_detach_task_action(tid)
-            task_status.sub_status = "running-background"
-            TaskManager.upsert_task(tid, task_status)
-            yield task_status
+            runner.task_status.starting_background()
+            TaskManager.upsert_task(runner.task_status)
+            yield runner.task_status
             return
 
-        async for status in cls.progress_action(tid):
+        async for status in cls.progress_action(runner.task_status.task_id):
             yield status
 
     @classmethod
