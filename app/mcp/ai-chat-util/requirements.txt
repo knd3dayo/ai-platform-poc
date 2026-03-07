@@ -18,7 +18,7 @@ anthropic
 google-generativeai
 
 # For MCP
-fastmcp == 2.12.4
+fastmcp
 # For API
 fastapi
 # Microsoft Agent Framework
@@ -26,6 +26,21 @@ agent-framework
 # For PDF processing
 PyMuPDF
 
-# file util
-file_util @ git+https://github.com/knd3dayo/file-util.git@main
+# For File,Excel
+magika
+pillow
+python-docx
+python-dotenv
+python-pptx
+openpyxl
+markdown
+pdfminer.six
+beautifulsoup4
+chardet
+aiofiles
 
+#ｆor ZIP
+pyzipper
+
+# For SMB
+smbprotocol
