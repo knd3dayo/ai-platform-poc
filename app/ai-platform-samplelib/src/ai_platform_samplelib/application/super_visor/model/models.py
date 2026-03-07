@@ -30,6 +30,12 @@ class ServerConfig(BaseModel):
 
     executor_base_url: str = ""  # Executor API のエンドポイント (例: http://host.docker.internal:7101)
 
+    # SV→非同期連携基盤(イベント)連携のためのEventBus設定（PoC: Redis等に依存しないモック実装）
+    # - noop: 何もしない（既定）
+    # - stdout: 標準出力へ JSON を出す
+    # - memory: プロセス内に蓄積（テスト/デバッグ用）
+    event_bus_type: str = "noop"
+
     # 環境変数や .env ファイルから設定をロードする関数    
     @classmethod
     def load_from_env(cls) -> "ServerConfig":
@@ -42,12 +48,14 @@ class ServerConfig(BaseModel):
         executor_base_url = os.getenv("EXECUTOR_BASE_URL") or ("http://host.docker.internal:7101" if in_container else "http://localhost:7101")
         executor_base_url = executor_base_url.rstrip("/")
         llm_api_key = os.getenv("LLM_API_KEY", "")
+        event_bus_type = os.getenv("SV_EVENT_BUS_TYPE", "noop")
 
         params = {
             "llm_provider": llm_provider,
             "llm_model": llm_model,
             "llm_api_key": llm_api_key,
             "executor_base_url": executor_base_url,
+            "event_bus_type": event_bus_type,
         }
         if llm_base_url:
             params["llm_base_url"] = llm_base_url

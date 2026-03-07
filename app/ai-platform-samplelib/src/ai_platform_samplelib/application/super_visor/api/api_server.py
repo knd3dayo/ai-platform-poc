@@ -12,6 +12,7 @@ from ...autonomous.model.models import TaskStatus
 from ..model.models import jobs_lock, jobs
 from ..core.utils import JobUtils
 from ..core.parallel_agent_workflow import start_background_thread
+from ai_platform_samplelib.event_bus import get_event_bus
 
 app = FastAPI(title="SV Agent Executor API")
 
@@ -87,6 +88,13 @@ async def cancel(thread_id: str) -> TaskStatus:
         JobUtils.set_cancel_flag(job)
         JobUtils.append_server_log(job, "Cancel requested via API")
         JobUtils.try_cancel_executor_task(job)
+
+        snapshot = job.model_copy(deep=True)
+
+    try:
+        get_event_bus().publish_task_status(snapshot, attributes={"source": "super_visor", "phase": "cancel_requested"})
+    except Exception:
+        pass
 
     return job
 

@@ -25,6 +25,7 @@ from ..core.utils import JobUtils, LLMUtils
 from .agent import LangGraphNodes
 from .tools import Tools, ToolNode
 from .agent import run_executor_local
+from ai_platform_samplelib.event_bus import get_event_bus
 
 
 class ParallelExecutionState(TypedDict, total=False):
@@ -314,6 +315,8 @@ def _extract_tool_payloads_from_messages(messages: List[Any]) -> List[Dict[str, 
 def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Optional[str]) -> None:
     """parallel_agent_workflow をバックグラウンドで実行し、jobs に途中経過/結果を格納する。"""
 
+    event_bus = get_event_bus()
+
     with jobs_lock:
         jobs[thread_id] = TaskStatus(
             task_id=thread_id,
@@ -327,6 +330,14 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
                 "server_logs": deque(maxlen=200),
             },
         )
+
+        # publish はロック外で行う
+        initial_snapshot = jobs[thread_id].model_copy(deep=True)
+
+    try:
+        event_bus.publish_task_status(initial_snapshot, attributes={"source": "super_visor", "phase": "started"})
+    except Exception:
+        pass
 
     try:
         wf = ParallelAgentWorkflow()
@@ -353,6 +364,7 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
 
         state: MessagesState = {"messages": [HumanMessage(content=user_message)]}
 
+        cfg_snapshot: TaskStatus | None = None
         with jobs_lock:
             job = jobs.get(thread_id)
             if job:
@@ -361,6 +373,14 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
                 JobUtils.append_server_log(job, "execution_mode=local")
                 job.metadata["llm_base_url"] = llm_base_url
                 job.metadata["executor_base_url"] = executor_base_url
+
+                cfg_snapshot = job.model_copy(deep=True)
+
+        if cfg_snapshot is not None:
+            try:
+                event_bus.publish_task_status(cfg_snapshot, attributes={"source": "super_visor", "phase": "configured"})
+            except Exception:
+                pass
 
         for event in graph.stream(state, stream_mode="values"):
             # event は state(values) の dict を想定
@@ -372,6 +392,7 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
             latest_content = getattr(latest, "content", None)
 
             # 進捗更新
+            snapshot: TaskStatus | None = None
             with jobs_lock:
                 job = jobs.get(thread_id)
                 if job:
@@ -379,6 +400,7 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
                         JobUtils.append_server_log(job, "Cancel requested. Stopping stream loop.")
                         job.status = "exited"
                         job.sub_status = "cancelled"
+                        snapshot = job.model_copy(deep=True)
                         break
                     job.metadata["latest_message"] = latest_content
 
@@ -406,6 +428,18 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
                         if JobUtils.get_cancel_flag(job):
                             JobUtils.try_cancel_executor_task(job)
 
+                        snapshot = job.model_copy(deep=True)
+
+                    # tool が無い場合でも、最新メッセージ更新があれば publish できるようにする
+                    if snapshot is None:
+                        snapshot = job.model_copy(deep=True)
+
+            if snapshot is not None:
+                try:
+                    event_bus.publish_task_status(snapshot, attributes={"source": "super_visor", "phase": "progress"})
+                except Exception:
+                    pass
+
         # 最終 state を取得（stream で最後に来た event を使っても良いが、ここでは progress を採用）
         with jobs_lock:
             job = jobs.get(thread_id)
@@ -423,6 +457,8 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
                     "latest_message": job.metadata.get("latest_message"),
                     "last_tool": job.metadata.get("last_tool"),
                 }
+
+                final_snapshot = job.model_copy(deep=True)
             else:
                 jobs[thread_id] = TaskStatus(
                     task_id=thread_id,
@@ -436,7 +472,15 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
                     },
                 )
 
+                final_snapshot = jobs[thread_id].model_copy(deep=True)
+
+        try:
+            event_bus.publish_task_status(final_snapshot, attributes={"source": "super_visor", "phase": "finished"})
+        except Exception:
+            pass
+
     except Exception as e:
+        error_snapshot: TaskStatus | None = None
         with jobs_lock:
             job = jobs.get(thread_id)
             if job:
@@ -447,6 +491,8 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
                 job.stderr = repr(e)
                 job.metadata["error"] = repr(e)
                 job.metadata["finished_at"] = time.time()
+
+                error_snapshot = job.model_copy(deep=True)
             else:
                 jobs[thread_id] = TaskStatus(
                     task_id=thread_id,
@@ -456,6 +502,14 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
                     stderr=repr(e),
                     metadata={"error": repr(e), "finished_at": time.time(), "server_logs": deque(maxlen=200)},
                 )
+
+                error_snapshot = jobs[thread_id].model_copy(deep=True)
+
+        if error_snapshot is not None:
+            try:
+                event_bus.publish_task_status(error_snapshot, attributes={"source": "super_visor", "phase": "error"})
+            except Exception:
+                pass
     finally:
         # 入力ZIPはPoCのため、そのまま残す（必要なら削除に変更可能）
         pass

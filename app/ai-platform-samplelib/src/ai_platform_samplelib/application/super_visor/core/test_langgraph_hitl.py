@@ -3,7 +3,7 @@ from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.prebuilt import ToolNode
 from langchain_core.messages import AIMessage, SystemMessage
 
-from .utils import LLMUtils
+from ai_platform_samplelib.application.super_visor.core.utils import LLMUtils
 
 # ==========================================
 # 1. ツールの定義（重要処理・副作用のある処理）

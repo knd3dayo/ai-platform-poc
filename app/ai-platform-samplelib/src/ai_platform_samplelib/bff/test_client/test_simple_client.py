@@ -2,7 +2,14 @@ import httpx
 import json
 import sys
 
-def test_langgraph_agent(prompt: str):
+import pytest
+
+# NOTE:
+#   これは「BFFへリクエストを投げる手動クライアント」です。
+#   CI/ローカルの `pytest` ではサーバ未起動が普通なので、自動テストとしてはスキップします。
+pytestmark = pytest.mark.skip(reason="manual integration client; requires running BFF server")
+
+def run_langgraph_agent(prompt: str) -> None:
     # BFFのURL (backend_key として config.yml のキーを指定)
     BFF_URL = "http://localhost:5401/api/v1/execute/langgraph_hitl_agent"
     
@@ -49,4 +56,4 @@ def test_langgraph_agent(prompt: str):
 
 if __name__ == "__main__":
     query = sys.argv[1] if len(sys.argv) > 1 else "こんにちは。今日の天気は？"
-    test_langgraph_agent(query)
+    run_langgraph_agent(query)
