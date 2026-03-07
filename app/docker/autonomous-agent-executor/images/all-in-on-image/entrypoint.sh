@@ -40,9 +40,9 @@ if [ "$requested_cmd" = "cline" ]; then
     fi
 
     if [ -n "${LLM_BASE_URL:-}" ]; then
-        cline auth -p "$LLM_PROVIDER" -k "$LLM_API_KEY" -m "$LLM_MODEL" -b "$LLM_BASE_URL"
+        runuser -u codeuser -- cline auth -p "$LLM_PROVIDER" -k "$LLM_API_KEY" -m "$LLM_MODEL" -b "$LLM_BASE_URL"
     else
-        cline auth -p "$LLM_PROVIDER" -k "$LLM_API_KEY" -m "$LLM_MODEL"
+        runuser -u codeuser -- cline auth -p "$LLM_PROVIDER" -k "$LLM_API_KEY" -m "$LLM_MODEL"
     fi
 fi
 

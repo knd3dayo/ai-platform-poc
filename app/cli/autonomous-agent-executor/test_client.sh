@@ -34,4 +34,4 @@ fi
 
 # テストクライアントの起動スクリプト
 . ${AI_PLATFORM_POC_ROOT}/app/ai-platform-samplelib/.venv/bin/activate
-python -m ai_platform_samplelib.application.autonomous.cli.main run -s . test_client.shスクリプトを日本語で説明して。 
+python -m ai_platform_samplelib.application.autonomous.cli.main run -s . -s ${CODE_AGENT_CONFIG_PATH} test_client.shスクリプトを日本語で説明して。 

@@ -2,6 +2,7 @@ import typer
 import asyncio
 from pathlib import Path
 from typing import Optional
+import time
 
 # 内部パッケージのインポート
 from ..core.task_manager import TaskManager
@@ -16,7 +17,12 @@ app = typer.Typer(help="Autonomous Agent Executor CLI Tool")
 @app.command()
 def run(
     prompt: str = typer.Argument(..., help="指示内容"),
-    src: Optional[Path] = typer.Option(None, "--src", "-s"),
+    sources: Optional[list[Path]] = typer.Option(
+        None,
+        "--src",
+        "-s",
+        help="コンテナへ渡すソース（複数指定可）",
+    ),
     task_id: Optional[str] = typer.Option(None, "--id"),
     timeout: int = 300,
     wait: bool = True,
@@ -27,13 +33,41 @@ def run(
         await TaskService.run(
         actions,
         prompt,
-        src,
+        sources,
         task_id,
         timeout,
         wait,
         dest
     )
         
+    asyncio.run(main())
+
+
+@app.command(hidden=True)
+def monitor(
+    task_id: str,
+    interval: float = typer.Option(2.0, help="ポーリング間隔（秒）"),
+    max_seconds: int = typer.Option(3600, help="最大監視時間（秒）"),
+    tail: int = typer.Option(200, help="ログ取得行数"),
+    quiet: bool = typer.Option(True, help="出力せず DB 更新のみ行う"),
+):
+    """デタッチ実行用の内部モニタ（status の自動更新）"""
+
+    async def main():
+        start = time.monotonic()
+        while True:
+            status_data = await TaskManager.show_status(task_id, tail=tail)
+            if not quiet:
+                actions.after_get_status_action(task_id, status_data)
+
+            if status_data.status not in ("running", "pending"):
+                return
+
+            if time.monotonic() - start > max_seconds:
+                return
+
+            await asyncio.sleep(interval)
+
     asyncio.run(main())
 
 @app.command(name="list")

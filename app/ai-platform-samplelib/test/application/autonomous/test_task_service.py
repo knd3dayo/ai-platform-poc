@@ -81,7 +81,7 @@ def test_task_service_run_does_not_pass_background_tasks_and_normalizes_source_p
         TaskService.run(
             actions=actions,
             prompt="hello",
-            src=tmp_path,
+            sources=[tmp_path],
             task_id="tid",
             timeout=1,
             wait=True,
@@ -97,3 +97,46 @@ def test_task_service_run_does_not_pass_background_tasks_and_normalizes_source_p
 
     # Key regression: no legacy FastAPI background_tasks should leak into CLI run
     assert captured["extra_kwargs"] == {}
+
+
+def test_run_task_detached_spawns_monitor(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    spawned: dict[str, object] = {}
+
+    class _DummyContainer:
+        id = "dummy-container"
+
+        def reload(self):
+            return
+
+    class _DummyRunner:
+        def __init__(self) -> None:
+            self.task_status = TaskStatus(task_id="tid")
+
+        def run(self):
+            return _DummyContainer()
+
+    def fake_upsert_task(status: TaskStatus):
+        return
+
+    def fake_popen(cmd, **kwargs):
+        spawned["cmd"] = cmd
+        spawned["kwargs"] = kwargs
+
+        class _P:
+            pid = 123
+
+        return _P()
+
+    monkeypatch.setattr(task_service_module.TaskManager, "upsert_task", fake_upsert_task)
+    monkeypatch.setattr(task_service_module.subprocess, "Popen", fake_popen)
+
+    async def _consume_once():
+        agen = TaskService.run_task(_DummyRunner(), timeout=1, dest=tmp_path, wait=False)
+        status = await anext(agen)
+        assert status.sub_status == "running-background"
+
+    asyncio.run(_consume_once())
+
+    cmd = spawned.get("cmd")
+    assert isinstance(cmd, list)
+    assert "monitor" in cmd

@@ -1,8 +1,10 @@
 import asyncio
+import subprocess
+import sys
+import os
 import pathlib
 import tempfile
 from datetime import datetime
-import os
 from pathlib import Path
 from typing import Optional, AsyncGenerator, Generator, Union
 import shutil
@@ -28,6 +30,38 @@ from ..core.task_manager import TaskManager
 from ..core.abstract_actions import AbstractActions
 # --- Logic Layer: Typerに依存しないサービス ---
 class TaskService:
+    @classmethod
+    def _spawn_detached_monitor(cls, task_id: str, timeout: int) -> None:
+        """wait=False の場合でも tasks_db.json が自動更新されるよう、別プロセスで monitor を起動する。"""
+        if os.getenv("AI_PLATFORM_DISABLE_DETACH_MONITOR") == "1":
+            return
+
+        # timeout に少し余裕を持たせる（ログ保存・docker の状態反映の遅延吸収）
+        max_seconds = max(int(timeout) + 60, 120)
+        interval = float(os.getenv("AI_PLATFORM_DETACH_MONITOR_INTERVAL", "2.0"))
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "ai_platform_samplelib.application.autonomous.cli.main",
+            "monitor",
+            task_id,
+            "--interval",
+            str(interval),
+            "--max-seconds",
+            str(max_seconds),
+            "--quiet",
+        ]
+
+        subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+
     def __init__(self):
         pass
 
@@ -118,7 +152,7 @@ class TaskService:
             cls,
             actions: AbstractActions,
             prompt: str,
-            src: Optional[Path],
+            sources: Optional[list[Path]],
             task_id: Optional[str] ,
             timeout: int = 300,
             wait: bool = True,
@@ -130,8 +164,8 @@ class TaskService:
             "prompt": prompt,
             "task_id": task_id,
         }
-        if src and src.exists():
-            params["source_paths"] = [src]
+        if sources:
+            params["source_paths"] = sources
 
         runner = await CodingAgentRunner.create_runner(**params)
         async for status in TaskService.run_task(runner, timeout, dest, wait):
@@ -165,6 +199,8 @@ class TaskService:
             # self.actions.after_start_detach_task_action(tid)
             runner.task_status.starting_background()
             TaskManager.upsert_task(runner.task_status)
+            # 呼び出し側が 1 回目の yield で break しても確実に起動するよう、yield 前に monitor を起動する
+            cls._spawn_detached_monitor(runner.task_status.task_id, timeout)
             yield runner.task_status
             return
 
