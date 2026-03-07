@@ -6,9 +6,6 @@ from typing import Optional
 # 内部パッケージのインポート
 from ..core.task_manager import TaskManager
 from ..core.task_service import TaskService
-from ..core.coding_agent_runner import CodingAgentRunner
-from ..core.abstract_actions import AbstractActions
-from ..model.models import TaskStatus, ComposeConfig, CodingAgentConfig
 from .typer_actions import TyperActions
 
 # --- CLI Layer: コマンドの定義 ---
