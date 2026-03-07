@@ -44,12 +44,20 @@ def list_tasks():
 @app.command()
 def status(task_id: str, tail: int = 20):
     """状態確認"""
-    asyncio.run(TaskManager.show_status(task_id, tail))
+    async def main():
+        status_data = await TaskManager.show_status(task_id, tail)
+        actions.after_get_status_action(task_id, status_data)
+
+    asyncio.run(main())
 
 @app.command()
 def cancel(task_id: str):
     """強制終了"""
-    asyncio.run(TaskManager.cancel_task(task_id))
+    async def main():
+        await TaskManager.cancel_task(task_id)
+        actions.after_cancel_action(task_id)
+
+    asyncio.run(main())
 
 @app.command()
 def pull(task_id: str, dest: Path = typer.Option("./src-updated")):

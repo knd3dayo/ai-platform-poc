@@ -127,12 +127,11 @@ class TaskService:
         """新しいタスクを実行します。"""
         TaskManager.load_tasks()
         params = {
-            "background_tasks": None,
             "prompt": prompt,
             "task_id": task_id,
         }
         if src and src.exists():
-            params["source_paths"] = src
+            params["source_paths"] = [src]
 
         runner = await CodingAgentRunner.create_runner(**params)
         async for status in TaskService.run_task(runner, timeout, dest, wait):
@@ -152,11 +151,15 @@ class TaskService:
     async def run_task(cls, runner: CodingAgentRunner,
                        timeout: int, dest: Path, wait: bool) -> AsyncGenerator[TaskStatus, None]:
         """タスクの開始、監視、完了後の同期までを一括管理"""
-        runner.run()
+        container = runner.run()
+        # container_id が無いと logs/状態取得ができず、running のまま固まるため必ず保存する
+        runner.task_status.container_id = getattr(container, "id", None)
         
         if wait:
             runner.task_status.starting_foregrond()
             TaskManager.upsert_task(runner.task_status)
+            # wait=True の CLI 実行では monitor_container を同一イベントループ内で走らせて完了検知する
+            asyncio.create_task(cls.monitor_container(container, runner, timeout))
             yield runner.task_status
         else:
             # self.actions.after_start_detach_task_action(tid)

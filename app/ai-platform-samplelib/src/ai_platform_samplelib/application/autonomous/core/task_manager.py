@@ -46,6 +46,7 @@ class TaskManager:
     @classmethod
     def save_tasks(cls):
         """現在のタスク状態をファイルに保存する"""
+        TaskManager.get_tasks_file_path().parent.mkdir(parents=True, exist_ok=True)
         with open(TaskManager.get_tasks_file_path(), "w") as f:
             data = {k: v.model_dump(mode='json') for k, v in TaskManager.get_all_tasks().items()}
             json.dump(data, f, indent=2)
@@ -80,35 +81,61 @@ class TaskManager:
     # --- ステータス取得の修正 ---
     @classmethod
     async def get_status(cls, task_id: str, tail: int | None = 200) -> TaskStatus:
+        # CLI はコマンドごとに別プロセスで起動されるため、永続ストアから都度復元する
+        TaskManager.load_tasks()
         task = TaskManager.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
 
-        if task.status == "running" and task.container_id:
+        # デタッチ実行などで monitor が走らない場合でも、status 取得時にコンテナ状態を再評価して追従する。
+        if task.container_id:
             try:
-                # whales を使って実行中のコンテナからログを取得
-                # 戻り値は結合されたログの文字列です
+                container = whales.container.inspect(task.container_id)
+                # state を最新化
+                container.reload()
+
+                # logs の取得（running/exited いずれも取得可能）
                 if tail is None:
                     logs = whales.container.logs(task.container_id)
                 else:
                     logs = whales.container.logs(task.container_id, tail=tail)
+
                 if isinstance(logs, str):
                     logs_str = logs
                 else:
-                    # Convert iterable of (stream, bytes) to string
                     logs_str = "".join(
                         b.decode("utf-8", errors="replace") if isinstance(b, bytes) else str(b)
                         for _, b in logs
                     )
+
+                status = getattr(getattr(container, "state", None), "status", None)
+                exit_code = getattr(getattr(container, "state", None), "exit_code", None)
+
+                if status == "exited":
+                    # 監視プロセスがいなくても、ここで最終状態へ寄せる
+                    if exit_code == 0:
+                        task.completed()
+                    else:
+                        task.failed()
+                    task.stdout = logs_str
+                    TaskManager.upsert_task(task)
+                    return task
+
+                # running の場合は増分ログを返す（保存はしない）
                 return TaskStatus(**task.model_dump(exclude={"stdout"}), stdout=logs_str)
             except Exception as e:
-                return TaskStatus(**task.model_dump(exclude={"stderr"}), stderr=f"Log fetch failed: {e}")
+                # コンテナが既に削除されている等。
+                # 既に stdout が保存済みならそれを返し、無い場合のみエラーを埋める。
+                if task.stdout is not None or task.status == "exited":
+                    return task
+                return TaskStatus(**task.model_dump(exclude={"stderr"}), stderr=f"Log/state fetch failed: {e}")
 
         return task
 
     # --- キャンセルの修正 ---
     @classmethod
     async def cancel_task(cls, task_id: str):
+        TaskManager.load_tasks()
         task = TaskManager.get_task(task_id)
         if task and task.status == "running" and task.container_id:
             try:

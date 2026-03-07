@@ -107,7 +107,7 @@ class TyperActions(AbstractActions) :
         self.console.print(f"[bold yellow]🛑 タスク {task_id} をキャンセルしました。[/bold yellow]")
 
     def after_get_status_action(self, task_id: str, status_data: TaskStatus) -> None:
-        self.console.print(f"=== Task: {task_id} [{status_data.status}] ===")
+        self.console.print(f"=== Task: {task_id} (status={status_data.status}, sub={status_data.sub_status}) ===")
         if status_data.stdout:
             self.console.print(f"\n[STDOUT]\n{status_data.stdout}")
         if status_data.stderr:

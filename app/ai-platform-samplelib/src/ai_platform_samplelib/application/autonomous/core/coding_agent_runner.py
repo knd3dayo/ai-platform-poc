@@ -69,10 +69,40 @@ class CodingAgentRunner:
             "GROUP_ID": str(os.getgid()),
         }
 
+        # LLM 設定をホスト環境から引き継ぐ。
+        # compose 側で env_file が指定されていても、ここで渡す env が優先されるため
+        # CLI で設定した LLM_MODEL 等を確実にコンテナへ反映できる。
+        for key in (
+            "LLM_PROVIDER",
+            "LLM_MODEL",
+            "LLM_API_KEY",
+            "LLM_BASE_URL",
+        ):
+            value = os.getenv(key)
+            if value:
+                params["envs"][key] = value
+
+        # docker-compose.yml の volumes で ${WORKSPACE} を使っているため、
+        # compose 側の変数置換に効く env-file をタスクごとに生成して渡す。
+        # (compose.run(envs=...) は `--env` であり、変数置換には影響しない)
+        compose_env_file = self.workspace / ".compose.env"
+        compose_env_file.write_text(
+            "\n".join(
+                [
+                    f"WORKSPACE={self.workspace.as_posix()}",
+                    f"USER_ID={os.getuid()}",
+                    f"GROUP_ID={os.getgid()}",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
         # クライアントは一度作れば使い回せます
         self.docker = DockerClient(
             compose_files=[self.compose_config.get_compose_path()],
             compose_project_directory=self.compose_config.compose_directory,
+            compose_env_files=[compose_env_file],
             # service_name ではなく task_id をベースにしたユニークな名前に
             compose_project_name=f"task_{self.task_id}"
         )
