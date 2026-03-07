@@ -18,7 +18,7 @@ services:
       retries: 10
     volumes:
       # ホスト側のパスを指定
-      - ../data/redis:/data
+      - ${HOME}/data/redis:/data
 
 networks:
   default:

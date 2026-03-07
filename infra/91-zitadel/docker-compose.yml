@@ -129,7 +129,7 @@ services:
     ports:
       - 15432:15432
     volumes:
-      - 'data:/var/lib/postgresql/data:rw'
+      - ${HOME}/data/zitadel:/var/lib/postgresql/data:rw
 
 networks:
   ai_platform_net:

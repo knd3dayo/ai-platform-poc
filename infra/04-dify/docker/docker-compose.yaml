@@ -46,7 +46,7 @@ services:
     image: busybox:latest
     command: chown -R 1001:1001 /app/api/storage
     volumes:
-      - ../data/dify/storage:/app/api/storage
+      - ${HOME}/data/dify/storage:/app/api/storage
 
   api:
     image: langgenius/dify-api:1.13.0
@@ -55,7 +55,7 @@ services:
     depends_on:
       init_permissions: { condition: service_completed_successfully }
     volumes:
-      - ../data/dify/storage:/app/api/storage
+      - ${HOME}/data/dify/storage:/app/api/storage
     networks: [ssrf_proxy_network, default]
 
   worker:
@@ -65,7 +65,7 @@ services:
     depends_on:
       init_permissions: { condition: service_completed_successfully }
     volumes:
-      - ../data/dify/storage:/app/api/storage
+      - ${HOME}/data/dify/storage:/app/api/storage
     networks: [ssrf_proxy_network, default]
 
   worker_beat:
@@ -90,8 +90,8 @@ services:
       GIN_MODE: release
       SANDBOX_PORT: 8194
     volumes:
-      - ../data/dify/sandbox/dependencies:/dependencies
-      - ../data/dify/sandbox/conf:/conf
+      - ${HOME}/data/dify/sandbox/dependencies:/dependencies
+      - ${HOME}/data/dify/sandbox/conf:/conf
     networks: [ssrf_proxy_network]
 
   plugin_daemon:
@@ -106,7 +106,7 @@ services:
       PLUGIN_REMOTE_INSTALLING_HOST: 0.0.0.0
       PLUGIN_REMOTE_INSTALLING_PORT: 5003
     volumes:
-      - ../data/dify/plugin_daemon:/app/storage
+      - ${HOME}/data/dify/plugin_daemon:/app/storage
     networks: [ssrf_proxy_network, default]
 
   ssrf_proxy:

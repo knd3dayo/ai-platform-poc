@@ -54,8 +54,8 @@ services:
       CLICKHOUSE_USER: clickhouse
       CLICKHOUSE_PASSWORD: clickhouse
     volumes:
-      - ../data/clickhouse/data:/var/lib/clickhouse
-      - ../data/clickhouse/logs:/var/log/clickhouse-server
+      - ${HOME}/data/clickhouse/data:/var/lib/clickhouse
+      - ${HOME}/data/clickhouse/logs:/var/log/clickhouse-server
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 5s
@@ -73,7 +73,7 @@ services:
     ports:
       - 9000:9000
     volumes:
-      - ../data/minio:/data
+      - ${HOME}/data/minio:/data
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 3s
