@@ -21,6 +21,8 @@ services:
     environment:
       - USER_ID=${USER_ID:-1000}
       - GROUP_ID=${GROUP_ID:-1000}
+      # Web UI をパスワードで保護（CLI(opencode run) では不要）
+      - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-opencode}
     env_file:
       - env_compose
     cap_add:

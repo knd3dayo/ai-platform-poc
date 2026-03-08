@@ -19,17 +19,3 @@ AI_PLATFORM_LIB=${AI_PLATFORM_POC_ROOT}/app/ai-platform-samplelib
 
 WORKSPACE_ROOT=${HOME}/workspace
 CODE_AGENT_CONFIG_PATH=${AI_PLATFORM_POC_ROOT}/app/docker/autonomous-agent-executor/images/all-in-on-image/config/common
-
-# Disable external https://models.dev fetch (required when egress is restricted)
-OPENCODE_DISABLE_MODELS_FETCH=true
-# Disable default plugins that are installed via npm/bun (egress restricted envs)
-OPENCODE_DISABLE_DEFAULT_PLUGINS=true
-# Disable downloading LSP binaries (often requires egress)
-OPENCODE_DISABLE_LSP_DOWNLOAD=true
-# Disable loading project/workspace config files (eg /workspace/opencode.jsonc)
-# Useful to run opencode in restricted-egress environments without MCP/project hooks.
-OPENCODE_DISABLE_PROJECT_CONFIG=true
-# Disable features that may contact external services on startup
-OPENCODE_DISABLE_AUTOUPDATE=true
-OPENCODE_DISABLE_SHARE=true
-OPENCODE_DISABLE_EXTERNAL_SKILLS=true

@@ -12,7 +12,7 @@ fi
 
 # envファイルの読み込み。
 set -a
-. ./.env
+. ./env_run
 set +a
 
 # 第1引数： cline または claude
@@ -39,4 +39,5 @@ fi
 
 # テストクライアントの起動スクリプト
 . ${AI_PLATFORM_POC_ROOT}/app/ai-platform-samplelib/.venv/bin/activate
-python -m ai_platform_samplelib.application.autonomous.cli.main run -s . -s ${CODE_AGENT_CONFIG_PATH} test_client.shスクリプトを日本語で説明して。 
+PROMPT=${2:-"test_client.sh スクリプトを日本語で説明して。"}
+python -m ai_platform_samplelib.application.autonomous.cli.main run -s . -s ${CODE_AGENT_CONFIG_PATH} "$PROMPT"
