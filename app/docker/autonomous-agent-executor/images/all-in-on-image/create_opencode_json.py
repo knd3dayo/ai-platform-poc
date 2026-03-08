@@ -15,7 +15,8 @@ def main(output_path: str):
     if not llm_model:
         raise ValueError("LLM_MODEL environment variable is required")
 
-    llm_base_url = os.getenv("LLM_BASE_URL" )
+    # Prefer a container-reachable base URL when provided.
+    llm_base_url = os.getenv("LLM_BASE_URL_IN_CONTAINER") or os.getenv("LLM_BASE_URL")
 
     config = {}
 

@@ -1,10 +1,18 @@
 #!/bin/bash
 set -e
 
+# Prefer a container-reachable LLM base URL when provided.
+# This allows using LLM_BASE_URL for host-side tools (e.g. localhost)
+# while keeping the container pointing at the Docker network hostname.
+if [ -n "${LLM_BASE_URL_IN_CONTAINER:-}" ]; then
+    export LLM_BASE_URL="${LLM_BASE_URL_IN_CONTAINER}"
+fi
+
 # 1. Firewallの初期化 (sudoが必要)
 if [ -f "/usr/local/bin/init-firewall.sh" ]; then
     echo "🛡️ Initializing Firewall..."
-    sudo /usr/local/bin/init-firewall.sh
+    # Preserve env vars such as ALLOW_OPENCODE_APP_EGRESS/OPENCODE_APP_HOST.
+    sudo -E /usr/local/bin/init-firewall.sh
 fi
 
 # 2. 環境変数をopencode.jsonに反映させるためのPythonスクリプトを実行
