@@ -1,9 +1,14 @@
 services:
-  # ネットワーク作成を目的としたダミーサービス
+  # ネットワーク作成を目的としたサービス
   # `docker compose up` 実行時に ai_platform_net が確実に作成されるようにする
+  # 兼: ローカル/同一Dockerネットワーク向けのHTTP(S)プロキシ
   net-init:
-    image: alpine:3.20
-    command: ["sh", "-lc", "echo ai_platform_net ready"]
+    image: ubuntu/squid:latest
+    command: ["sh", "-lc", "squid -Nz || true; squid -N -f /etc/squid/squid.conf"]
+    volumes:
+      - ./squid.conf:/etc/squid/squid.conf:ro
+    ports:
+      - "3128:3128"
 
 networks:
   default:

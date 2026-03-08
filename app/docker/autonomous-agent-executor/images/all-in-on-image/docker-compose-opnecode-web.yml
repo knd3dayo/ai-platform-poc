@@ -22,7 +22,7 @@ services:
       - USER_ID=${USER_ID:-1000}
       - GROUP_ID=${GROUP_ID:-1000}
     env_file:
-      - .env
+      - env_compose
     cap_add:
       # iptablesの初期化にネットワークスタックへのアクセスが必要なため
       - NET_ADMIN

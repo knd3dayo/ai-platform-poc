@@ -1,0 +1,6 @@
+# build.sh で使用するイメージ名
+IMAGE_NAME="all-in-one-code-executor-image"
+# build.sh で使用するイメージに格納するファイルのパス
+AI_PLATFORM_LIB=../../../../ai-platform-samplelib
+# build.sh で使用するイメージに格納するファイルのパス
+MCP_LIB=../../../../mcp

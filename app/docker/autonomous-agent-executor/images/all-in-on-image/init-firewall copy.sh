@@ -12,18 +12,6 @@ if ! command -v iptables >/dev/null 2>&1; then
 	exit 1
 fi
 
-# Test switch: disable egress restriction completely (allow all outbound).
-# NOTE: This makes the container able to access the internet.
-if [ "${ALLOW_ALL_EGRESS:-}" = "true" ] || [ "${ALLOW_ALL_EGRESS:-}" = "1" ]; then
-	echo "⚠️  ALLOW_ALL_EGRESS is enabled: allowing all outbound traffic (no egress restrictions)." >&2
-	iptables -F
-	iptables -X
-	iptables -P INPUT ACCEPT
-	iptables -P FORWARD DROP
-	iptables -P OUTPUT ACCEPT
-	exit 0
-fi
-
 primary_iface="$(ip -o route show default 2>/dev/null | awk '{print $5; exit}')"
 if [ -z "${primary_iface}" ]; then
 	primary_iface="$(ip -o link show | awk -F': ' '$2 != "lo" {print $2; exit}')"
