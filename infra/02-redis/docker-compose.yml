@@ -22,5 +22,5 @@ services:
 
 networks:
   default:
-    name: ai_platform_net
+    name: ai_platform_internal
     external: true

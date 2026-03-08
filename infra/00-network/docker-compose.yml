@@ -1,6 +1,7 @@
 services:
    squid:
       image: ubuntu/squid:latest
+      restart: always
       volumes:
          - ./squid.conf:/etc/squid/squid.conf:ro
       # NOTE: 社内LANからSquidを叩く必要がないなら ports 公開は不要。
