@@ -1,15 +1,21 @@
 services:
-  # ネットワーク作成を目的としたサービス
-  # `docker compose up` 実行時に ai_platform_net が確実に作成されるようにする
-  # 兼: ローカル/同一Dockerネットワーク向けのHTTP(S)プロキシ
-  squid:
-    image: ubuntu/squid:latest
-    volumes:
-      - ./squid.conf:/etc/squid/squid.conf:ro
-    ports:
-      - "3128:3128"
+   squid:
+      image: ubuntu/squid:latest
+      volumes:
+         - ./squid.conf:/etc/squid/squid.conf:ro
+      # NOTE: 社内LANからSquidを叩く必要がないなら ports 公開は不要。
+      # ports:
+      #   - "3128:3128"
+      networks:
+         - ai_platform_internal
+         - ai_platform_egress
 
 networks:
-  default:
-    name: ai_platform_net
-    driver: bridge
+   ai_platform_internal:
+      name: ai_platform_internal
+      driver: bridge
+      internal: true
+
+   ai_platform_egress:
+      name: ai_platform_egress
+      driver: bridge

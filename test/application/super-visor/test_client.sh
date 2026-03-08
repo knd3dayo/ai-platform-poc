@@ -1,26 +1,8 @@
 #!/bin/sh
-# 第1引数： cline / claude / opencode
-if [ "$1" = "cline" ]; then
-  echo "🚀 Starting Cline API Server..."
-    # envファイルの読み込み。
-    set -a
-    . ./.env_cline
-    set +a
-elif [ "$1" = "claude" ]; then
-  echo "🚀 Starting Claude API Server..."
-    # envファイルの読み込み。
-    set -a
-    . ./.env_claude_code
-    set +a
-elif [ "$1" = "opencode" ]; then
-  echo "🚀 Starting OpenCode ..."
-    set -a
-    . ./.env_opencode
-    set +a
-else
-  echo "❌ Invalid argument. Use 'cline', 'claude', or 'opencode'."
-  exit 1
-fi
+  # envファイルの読み込み。
+  set -a
+  . ./env_run
+  set +a
 
 # テストクライアントの起動スクリプト
 . ${AI_PLATFORM_LIB}/.venv/bin/activate

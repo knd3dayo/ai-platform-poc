@@ -2,13 +2,9 @@ services:
   litellm:
     restart: always
     image: ghcr.io/berriai/litellm:main-latest
-    environment:
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
-      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
-      # 同一ネットワーク内のLangfuseコンテナ名を指定
-      - LANGFUSE_HOST=http://langfuse-web:3000
+    env_file:
+      - .env
+
     volumes:
       - ./config.yaml:/app/config.yaml
       # src配下のパッケージディレクトリごとマウント
@@ -21,5 +17,5 @@ services:
   
 networks:
   default:
-    name: ai_platform_net
+    name: ai_platform_internal
     external: true
