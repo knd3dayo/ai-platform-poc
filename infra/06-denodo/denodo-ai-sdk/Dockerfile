@@ -40,4 +40,5 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["/bin/bash"]
+# cd /home/denodo/denodo-ai-sdk && . venv/bin/activate && python src/run.py both
+CMD [ "sh", "-c", "cd /home/denodo/denodo-ai-sdk && . venv/bin/activate && python run.py both" ]

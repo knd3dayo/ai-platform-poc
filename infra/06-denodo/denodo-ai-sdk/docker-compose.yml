@@ -1,12 +1,17 @@
 services:
   denodo-ai-sdk:
     image: denodo-ai-sdk-image
-    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
     volumes:
       - ./config/sdk_config.env:/home/denodo/denodo-ai-sdk/api/utils/sdk_config.env:ro
       - ./config/chatbot_config.env:/home/denodo/denodo-ai-sdk/sample_chatbot/chatbot_config.env:ro
+    environment:
+      - USER_ID=${USER_ID:-1000}
+      - GROUP_ID=${GROUP_ID:-1000}
     env_file:
       - env_compose
+    ports:
+      - "9992:9992"
+      - "8008:8008"
     cap_add:
       # iptablesの初期化にネットワークスタックへのアクセスが必要なため
       - NET_ADMIN
