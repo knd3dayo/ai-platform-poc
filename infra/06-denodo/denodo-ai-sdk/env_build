@@ -1,0 +1,2 @@
+# build.sh で使用するイメージ名
+IMAGE_NAME="denodo-ai-sdk-image"

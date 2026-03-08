@@ -1,0 +1,367 @@
+# How to connect to Denodo from Python
+
+言語を選択
+Google 翻訳翻訳
+
+
+Introduction
+Data scientists rely on Python, and Python-workbooks for its seamless transition between data manipulation, machine learning, and visualization. Denodo enhances this workflow by acting as the semantic interoperability layer, handling the complexities of enterprise data access and governance across internal and external silos, so Python users can consume clean data directly.
+
+
+This article explores the methods for connecting Python to Denodo, specifically focusing on how to efficiently ingest data using SQLAlchemy. We will cover the technical implementation of these connections to provide a foundation for exploration, integration, and querying.
+
+Connection Methods
+Denodo maintains two SQL Alchemy dialects to seamlessly establish the connection between Python and Denodo:
+
+
+Library
+
+Denodo Interface
+
+Default Port
+
+Comment
+
+Flight SQL
+
+Arrow Flight SQL
+
+9994
+
+Apache Arrow Flight is a high-performance framework designed for fast data transfer
+
+Psycopg2 (Legacy)
+
+ODBC
+
+9996
+
+psycopg2 is a popular adapter for PostgreSQL that can be also used for Denodo.
+
+
+The easiest way to connect to the Denodo Platform from Python is to use a Denodo Dialect for SQLAlchemy. Although you can use SQLAlchemy with either Arrow Flight SQL and psycopg2 interfaces, we recommend the use of the Denodo’s Flight SQL Dialect for greater throughput, as the connection leverages Apache Arrow’s columnar data format and RPC framework to reduce serialization overhead and maximize throughput.
+
+
+What is SQL Alchemy
+SQLAlchemy provides a Pythonic abstraction of SQL, mapping database operations to generative Python expressions. This is intuitive by representing database concepts like engines, connections, and schemas, as native Python objects allowing for a direct translation of Python logic into Denodo VQL. Take the following example of a standard VQL Query:
+
+
+SELECT * FROM  user_table WHERE (usertable.c.name == ‘Wendy) AND (users_table.c.enrolled == True)
+
+
+This can also be expressed in SQL Alchemy with the following using the select() and where() operator:
+
+
+stmt = (
+
+    select(user_table)
+
+    .where(user_table.c.name == "wendy")
+
+    .where(user_table.c.enrolled == True)
+
+)
+
+
+
+For information on how SQLAlchemy maps specific operations visit the SQLAlchemy documentation.
+
+
+Although SQLAlchemy allows VQL strings to be passed directly, utilizing SQLAlchemy Core functions offers several advantages for production-grade workflows:
+
+
+Automatically handling parameterization, protecting your Denodo environment from SQL injection.
+Ensures that Pythonic commands are correctly translated into VQL syntax.
+Allows to construct conditional logic using Python variables.
+Installation
+denodo-sqlalchemy is typically installed from Python’s package repository PyPI using pip or uv.
+
+Requirements
+Python 3.9 or newer is needed.
+Denodo
+Denodo 9.1 or newer for FlightSQL
+Older versions of Denodo have legacy support via Psycopg2
+Flight SQL
+pip
+
+pip install denodo-sqlalchemy[flightsql]
+
+
+uv
+
+uv pip install denodo-sqlalchemy[flightsql]
+
+Psycopg2
+pip
+
+pip install denodo-sqlalchemy
+
+
+uv
+
+uv pip install denodo-sqlalchemy
+
+Connecting to Denodo
+SQLAlchemy utilizes Connection URIs to define how the engine (connection manager) communicates with your Denodo instance. The format changes depending on the driver and the authentication required.
+
+
+Flight SQL Connection URL:
+
+
+denodo+flightsql://<user>:<password>@<host>:<port[9994]>/<database>
+
+
+Note that the Flight SQL interface will assume TLS/SSL is enabled at the server and, if not, this should be explicitly signaled:
+
+
+engine = sqlalchemy.create_engine(
+
+        uri,
+
+        connect_args={
+
+            denodo_sqlalchemy.flightsql.CONNECT_ARGS_USE_ENCRYPTION: "false"
+
+        })
+
+
+Psycopg2 Connection URL:
+
+denodo+psycopg2://<user>:<password>@<host>:<port[9996]>/<database>
+
+
+Note:  The ports used by the two interfaces are different.
+
+Authentication
+Basic
+To connect with a Username and Password using Basic Authentication, you can pass credentials directly within the connection string.
+
+
+<driver>://<user>:<password>@<host>:<<port>>/<database>
+
+OAuth
+OAuth is not supported by the psycopg2 driver because it does not support headers in the connection. OAUTH is only available via the flightsql driver.
+
+
+To use OAuth with FlightSQL, the engine must be configured to pass the token in the connection headers.
+
+
+DATABASE = "sample_db"  
+
+TOKEN = ""
+
+
+engine = create_engine(
+
+    f"denodo+flightsql://localhost:9994/{DATABASE}",
+
+    connect_args={
+
+        "use_encryption": "false",
+
+
+        # Bearer token
+
+        DatabaseOptions.AUTHORIZATION_HEADER.value: f"Bearer {TOKEN}",
+
+
+    },
+
+)
+
+
+A standard pattern for dynamically retrieving OAuth tokens is using the @event.listens_for decorator. This decorator works by executing code when an object, like the engine, emits a call to a function. In our case it can inject a token into the driver configuration when the engine wants to make a call to Denodo.
+
+
+The generation of the token is outside the scope of this documentation. In a typical Oauth deployment, a user would use a library like requests-oauthlib or msal to dynamically fetch a fresh token first, then inject it using @event.listens_for.
+
+
+The following is a simplified template of what using @event.listens_for to inject a token into the driver configuration ‘DatabaseOptions’ can look like.
+
+
+from adbc_driver_flightsql import DatabaseOptions
+
+from denodo.sqlalchemy import flightsql as denodo_flightsql
+
+from sqlalchemy import create_engine, text, event
+
+
+
+def get_token() -> str:
+
+    return <token>
+
+
+engine = create_engine(
+
+    "denodo+flightsql://localhost:9994/admin",  # dialect selected here; actual connect args below
+
+    connect_args={
+
+        "use_encryption": "false",
+
+    },
+
+)
+
+
+@event.listens_for(engine, "do_connect")
+
+def _inject_basic_token(dialect, conn_rec, cargs, cparams):
+
+    token = get_token()
+
+
+    cparams[DatabaseOptions.AUTHORIZATION_HEADER.value] = f"Bearer {token}"
+
+
+    cparams["adbc.flight.sql.rpc.call_header.database"] = "<your-database>"
+
+
+Querying Denodo with SQLAlchemy and Pandas
+Denodo SQL Alchemy works with many python native in-Memory Analytical Engines, the most common being Pandas. Pandas is one of the largest communities within python with many scientific libraries using it in the background.
+
+
+Querying with Denodo SQLAlchemy is straightforward with the read_sql() function.
+
+
+df_filtered = pd.read_sql(query, con=engine)
+
+
+This will send a query, designated by the query variable in this example, using the connection managed by the SQLAlchemy engine. The result will be a dataframe with the name df_filtered.
+
+
+Summary
+Integrating Denodo with Python via Denodo-SQLAlchemy transforms the way data scientists interact with their enterprise data ecosystem. By offloading the heavy lifting of data governance and silo integration to Denodo’s virtual semantic layer, Data Scientists can focus on what matters: driving analytics, extracting insights, and building models.
+
+
+With Denodo’s Flight SQL interface, connections are faster and more efficient than ever. Leveraging the Apache Arrow framework, Denodo eliminates the traditional overhead of data serialization, providing the high-speed throughput required for modern, massive datasets. This high-performance connection ensures data-driven applications are built on a standardized,  scalable and future-proof foundation.
+
+Examples
+Querying Denodo via Arrow Flight SQL
+Example with Arrow Flight SQL and Pandas
+
+
+import pandas as pandas
+
+import sqlalchemy
+
+import denodo.sqlalchemy as denodo_sqlalchemy
+
+
+uri = "denodo+flightsql://login:password@denodo-hostname:9994/bank_demo"
+
+
+engine = sqlalchemy.create_engine(uri)
+
+
+query = "SELECT * FROM bank_demo.bank_acct"
+
+
+data = pandas.read_sql(query, engine)
+
+
+data
+
+
+
+Querying Denodo via Psycopg2 (prior Denodo 9.1)
+Example with Psycopg2 and Pandas
+
+
+import sqlalchemy
+
+import pandas as pandas
+
+
+uri = "denodo+psycopg2://login:password!denodo-hostname:9996/bank_demo"
+
+
+engine = sqlalchemy.create_engine(uri)
+
+
+query = "SELECT * FROM bank_demo.bank_acct"
+
+
+data = pandas.read_sql(query, engine)
+
+
+data
+
+
+Tested Software Versions
+
+Python
+
+3.12.2
+
+Denodo
+
+9.0
+
+
+Disclaimer
+
+The information provided in the Denodo Knowledge Base is intended to assist our users in advanced uses of Denodo. Please note that the results from the application of processes and configurations detailed in these documents may vary depending on your specific environment. Use them at your own discretion.
+
+For an official guide of supported features, please refer to the User Manuals. For questions on critical systems or complex environments we recommend you to contact your Denodo Customer Success Manager.
+Feedback:
+Share:
+Add feedback
+Recommended resources Recommendations generated by AI
+Using Notebooks for Data Science with Denodo
+KB Document
+External clients
+JDBC driver
+Jupyter
+Notebooks
+ODBC driver
+Zeppelin
+How to connect to Denodo from DBeaver
+KB Document
+JDBC driver
+External clients
+How to connect to Denodo using ODBC with OAuth
+KB Document
+External clients
+OAuth
+ODBC driver
+Security
+How to connect to Denodo from Power BI
+KB Document
+ODBC driver
+DSN
+How to get the OAuth access token to connect to Denodo
+KB Document
+Administration
+JDBC driver
+OAuth
+ODBC driver
+Okta
+OpenID
+Questions
+
+compatibility with pymssql
+We are using package pymssql (2.2.4). Is our code comaptible with Denodo as-is, or will we have to mkae changes to use a different package?
+
+
+ Answers: 5
+ 13 Apr 2023 15:22
+Pymssql Python 
+
+
+SqlAlchemy
+Hello,
+
+Thank you for explain that, that's very usefull.
+Is it possible to use SqlAlchemy instead of those connectors ? If yes can you have a document wich explain that ? Yesterday i tried to do that but it's not work.
+
+Thx.
+
+
+ Answers: 2
+ 17 Jan 2023 15:47
+Denodo data catalog SQLAlchemy Python 
+
+Ask a question
+You must sign in to ask a question. If you do not have an account, you can register here

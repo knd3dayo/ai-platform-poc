@@ -1,0 +1,17 @@
+services:
+  denodo-ai-sdk:
+    image: denodo-ai-sdk-image
+    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
+    volumes:
+      - ./config/sdk_config.env:/home/denodo/denodo-ai-sdk/api/utils/sdk_config.env:ro
+      - ./config/chatbot_config.env:/home/denodo/denodo-ai-sdk/sample_chatbot/chatbot_config.env:ro
+    env_file:
+      - env_compose
+    cap_add:
+      # iptablesの初期化にネットワークスタックへのアクセスが必要なため
+      - NET_ADMIN
+    
+networks:
+  default:
+    name: ai_platform_internal
+    external: true
