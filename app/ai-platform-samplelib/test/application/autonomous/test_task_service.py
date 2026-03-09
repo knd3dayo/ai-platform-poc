@@ -22,7 +22,7 @@ class _DummyActions(AbstractActions):
     async def progress_action(self, tid: str) -> TaskStatus:
         return TaskStatus(task_id=tid)
 
-    def after_complete_action(self, runner, dest: Path) -> None:
+    def after_complete_action(self, runner) -> None:
         return
     
     def pull_progress_action(self, func, dest: Path) -> None:
@@ -84,8 +84,7 @@ def test_task_service_run_does_not_pass_background_tasks_and_normalizes_source_p
             sources=[tmp_path],
             task_id="tid",
             timeout=1,
-            wait=True,
-            dest=tmp_path / "out",
+            wait=True
         )
     )
 
@@ -131,7 +130,7 @@ def test_run_task_detached_spawns_monitor(monkeypatch: pytest.MonkeyPatch, tmp_p
     monkeypatch.setattr(task_service_module.subprocess, "Popen", fake_popen)
 
     async def _consume_once():
-        agen = TaskService.run_task(_DummyRunner(), timeout=1, dest=tmp_path, wait=False)
+        agen = TaskService.run_task(_DummyRunner(), timeout=1, wait=False)
         status = await anext(agen)
         assert status.sub_status == "running-background"
 

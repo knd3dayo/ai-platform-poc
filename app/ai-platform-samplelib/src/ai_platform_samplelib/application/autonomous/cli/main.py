@@ -25,8 +25,7 @@ def run(
     ),
     task_id: Optional[str] = typer.Option(None, "--id"),
     timeout: int = 300,
-    wait: bool = True,
-    dest: Path = typer.Option("./src-updated", help="成果物の同期先ディレクトリ"),
+    wait: bool = True
 ):
     """新しいタスクを実行します。"""
     if sources:
@@ -43,8 +42,7 @@ def run(
         sources,
         task_id,
         timeout,
-        wait,
-        dest
+        wait
     )
         
     asyncio.run(main())

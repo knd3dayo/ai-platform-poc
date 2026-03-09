@@ -155,8 +155,7 @@ class TaskService:
             sources: Optional[list[Path]],
             task_id: Optional[str] ,
             timeout: int = 300,
-            wait: bool = True,
-            dest: Path = Path("./src-updated"),
+            wait: bool = True
     ):
         """新しいタスクを実行します。"""
         TaskManager.load_tasks()
@@ -168,14 +167,14 @@ class TaskService:
             params["source_paths"] = sources
 
         runner = await CodingAgentRunner.create_runner(**params)
-        async for status in TaskService.run_task(runner, timeout, dest, wait):
+        async for status in TaskService.run_task(runner, timeout, wait):
             if status.sub_status == "starting":
                 actions.after_start_task_action(status.task_id)
             elif status.sub_status == "running-background":
                 actions.after_start_detach_task_action(status.task_id)
                 break  # バックグラウンドで走らせる場合はここでループを抜ける
             elif status.status == "completed":
-                actions.after_complete_action(runner, dest)
+                actions.after_complete_action(runner)
                 break  # 完了したらループを抜ける
             
             await actions.progress_action(status.task_id)    
@@ -183,7 +182,7 @@ class TaskService:
 
     @classmethod
     async def run_task(cls, runner: CodingAgentRunner,
-                       timeout: int, dest: Path, wait: bool) -> AsyncGenerator[TaskStatus, None]:
+                       timeout: int, wait: bool) -> AsyncGenerator[TaskStatus, None]:
         """タスクの開始、監視、完了後の同期までを一括管理"""
         container = runner.run()
         # container_id が無いと logs/状態取得ができず、running のまま固まるため必ず保存する

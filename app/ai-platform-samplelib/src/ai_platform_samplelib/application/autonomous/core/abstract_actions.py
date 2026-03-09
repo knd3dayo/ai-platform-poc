@@ -24,7 +24,7 @@ class AbstractActions(ABC):
 
     @abstractmethod
     def after_complete_action(
-            self, runner: CodingAgentRunner, dest: Path) -> None:
+            self, runner: CodingAgentRunner) -> None:
         pass
     @abstractmethod
     def after_task_not_found_action(self) -> None:

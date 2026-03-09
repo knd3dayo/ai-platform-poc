@@ -87,15 +87,8 @@ class TyperActions(AbstractActions) :
         return status_data
 
     def after_complete_action(
-            self, runner: CodingAgentRunner,dest: Path) -> None:
-        if typer.confirm("✅ 完了しました。成果物をローカルに同期（pull）しますか？", default=True):
-            # 既存の pull コマンドロジックを再利用
-            try:
-                import shutil
-                shutil.copytree(runner.workspace, dest, dirs_exist_ok=True)
-                self.console.print(f"[bold green]✨ 成果物を {dest} に同期しました。[/bold green]")
-            except Exception as e:
-                self.console.print(f"[bold red]❌ 同期中にエラーが発生しました: {e}[/bold red]")
+            self, runner: CodingAgentRunner) -> None:
+        self.console.print(f"[bold green]✅ タスクが完了しました！[/bold green]")
 
     def after_task_not_found_action(self) -> None:
         typer.echo("タスクは見つかりませんでした。")

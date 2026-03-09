@@ -21,6 +21,61 @@ AIエージェントの一般的な用語として「スーパーバイザー」
 
 
 ## 実装方針
+
+### 自律型エージェントの実装方針
+* Claude Code、Cline CLI、OpenCodeのようなコーディングエージェントをDockerコンテナ上で実行する。
+  * コーディングエージェントには、ソースコードやログファイル、実行の前提となるデータファイルを格納したワークスペースをホスト側から渡す。
+  * ワークスペースにはAGENT.mdや利用可能なMCPの定義を記述した設定ファイルも格納する。
+* Egress 制御（firewall + Squid Proxy）
+   * 方針「LiteLLM Proxy を経由しない不正な LLM 通信のネットワーク遮断（Egress制御）」を実行時ゲートとして担保。
+   * 実行コンテナ側: `all-in-on-image` の `init-firewall.sh` で `iptables -P OUTPUT DROP` を既定にし、`127.0.0.0/8` と「コンテナ所属の Docker サブネット」宛のみ許可する（サブネットはデフォルトルートのIFから自動検出）。
+   * Proxy 経路: 外向き HTTP(S) が必要な処理は、`HTTP_PROXY` / `HTTPS_PROXY` を `http://squid:3128` に設定して Squid を経由させる
+   * Proxy サービス: Squid は `infra/00-network/`（`docker-compose.yml` / `squid.conf`）で提供し、到達先や許可ポートは Squid 側の設定で調整する。
+* 自律型エージェントの `task_id` は外部から指定可能で、未指定の場合はUUID等で自動採番する。
+
+* サンプル実装の方針
+   * Dockerコンテナのサンプル実装を[all-in-on-image](../../app/docker/autonomous-agent-executor/images/all-in-on-image)に作成する。
+   * Dockerコンテナの操作をPythonから行うサンプル実装を[ai_platform_samplelib/application/autonomous](../../app/ai-platform-samplelib/src/ai_platform_samplelib/application/autonomous)に作成する。
+   * Dockerコンテナの操作をPythonから行うサンプル実装のテストクライアント(シェルスクリプト)を[test/application/autonomous](../../test/application/autonomous)に配置する。
+
+
+#### 乖離点の列挙（暫定・優先判断は別途）
+* Egress 制御（firewall + Squid Proxy・暫定）
+   * 方針/期待: 「LiteLLM Proxy を経由しない不正な LLM 通信のネットワーク遮断（Egress制御）」を実行時ゲートとして担保。
+   * 現状:
+      * 実行コンテナ側: `all-in-on-image` の `init-firewall.sh` で `iptables -P OUTPUT DROP` を既定にし、`127.0.0.0/8` と「コンテナ所属の Docker サブネット」宛のみ許可する（サブネットはデフォルトルートのIFから自動検出）。
+      * Proxy 経路: 外向き HTTP(S) が必要な処理（例: 一部のツールが起動時に行う外部アクセス）は、`HTTP_PROXY` / `HTTPS_PROXY` を `http://squid:3128` に設定して Squid を経由させる（実行コンテナから `squid` を名前解決/到達できるネットワーク構成が前提。設定例: `all-in-on-image/env_compose`）。
+      * Proxy サービス: Squid は `infra/00-network/`（`docker-compose.yml` / `squid.conf`）で提供し、到達先や許可ポートは Squid 側の設定で調整する。
+   * 影響/評価:
+      * サンドボックスから外部インターネット等への「直接通信」（Docker サブネット外宛）は遮断される。
+      * Dockerネットワーク内（例: LiteLLM Proxy / Squid 等）へのアクセスは可能。
+      * 外向き HTTP(S) は「Squid へ到達できる + 対象プロセスが Proxy 環境変数に従う」範囲で成立する（暫定）。
+
+3. 機密情報の「注入」よりも「ハードコード/配布ファイルへの固定値」が中心
+   * 方針/期待: ウォームプール等を見据えた「実行直前の機密注入」（永続化しない）を志向。
+   * 現状: `.env_template` や `opencode.jsonc` などに API key が固定値として記載されている箇所がある（PoC用と推測されるが、方針とは方向性が異なる）。
+   * 影響: 誤って別環境へ持ち出す/ログ等へ露出するリスクが上がる。将来の「注入方式」への移行時に差し替えコストが発生し得る。
+
+4. workspace に置く想定の `AGENT.md` が見当たらない
+   * 方針/期待: workspace に `AGENT.md`（エージェント運用ルール等）を格納して渡す。
+   * 現状: リポジトリ内に `AGENT.md` が見当たらず、現行フロー上どこで生成/配置するかも不明。
+   * 影響: “何をしてよいか/だめか”の制約を workspace 側で与えづらく、運用ポリシーの具体化が進みにくい。
+
+5. MCP 認証情報の「受け取り→workspace内設定反映」の経路が薄い
+   * 方針/期待: Bearer トークン等を引数/環境変数で受け取り、workspace 内の MCP 定義へ反映。
+   * 現状: `create_opencode_json.py` は LLM 接続設定（provider/model/baseURL）中心で、`config/common/opencode.jsonc` の MCP 定義は固定値になっている。
+   * 影響: “実行時に注入された認証情報で MCP を呼ぶ”ユースケースが、今の default 設定では成立しにくい。
+
+6. 生成物（`src-updated`）内に環境ファイルが混在し、設定キーも揺れている
+   * 方針/期待: 実行時に参照される env キー（例: `COMPOSE_DIRECTORY`）が一貫していること。
+   * 現状: `test/application/autonomous/src-updated/` に過去の `.env_*` が残っており、`COMPOSE_PROJECT_DIRECTORY` のように実装が参照しないキーも含まれる。
+   * 影響: 人手運用時に誤って参照/コピーされやすく、トラブルシュートが難しくなる。
+
+7. ウォームプール/Speculative Boot 等の性能方針は未実装（PoC段階）
+   * 方針/期待: コールドスタート遅延を隠蔽するための投機起動・ウォームプール。
+   * 現状: タスクごとに workspace を切り、コンテナ起動・監視・終了後 remove までの基本線はあるが、ウォームプール等は未実装。
+   * 影響: コールドスタート時間がそのままユーザー体験に跳ねる。将来拡張の設計余地を残す必要がある。
+
 ### SV型エージェントの実装方針
 * SV型エージェントはLangGraphで実装し、コーディングエージェントのコンテナをPython経由で起動し、
 指示とタスクIDを渡す。なおタスクIDはワークスペースのパスの一部にもなる。
@@ -48,22 +103,25 @@ AIエージェントの一般的な用語として「スーパーバイザー」
   * SV型エージェントと自律型エージェントの情報共有、進捗管理のためのファイルをワークスペース上に配置して、各々がそれを参照したうえで処理を進めること。
   
 #### 現状との乖離（暫定・SV型エージェント）
-3. `TaskStatus` の逐次通知は既定では外部通知されない（EventBus未設定時）
+3. `TaskStatus` の逐次通知は既定では外部通知されない（`SV_EVENT_BUS_TYPE` 未設定時）
    * 方針/期待: 自律型エージェントの処理状況を `TaskStatus` として逐次受け取り、ユーザーまたは非同期連携基盤へ通知する。
-    * 現状:
-       * SV側の状態管理は `TaskStatus` に統一済み。ただしSV APIは削除しており、ユーザー向け取得手段は現状CLI表示が中心。
-       * SV内部では `TaskStatus` を `publish_task_status()` で発行している（例: started/configured/progress/finished/error）。既定の EventBus は `noop`（環境変数 `SV_EVENT_BUS_TYPE` 未設定の場合）で、PoC の標準実行経路（CLI / テストクライアント）では外部通知されない。
-       * モック（`noop/stdout/memory`）に加え、PoC向けの Redis Streams 実装（`SV_EVENT_BUS_TYPE=redis`）を追加済み。
-          * 例: `SV_EVENT_BUS_TYPE=redis`
-          * 接続先: `SV_EVENT_BUS_REDIS_URL`（最優先）
-          * 実行場所による切替（推奨）: `SV_EVENT_BUS_REDIS_URL_IN_HOST` / `SV_EVENT_BUS_REDIS_URL_IN_CONTAINER`
-          * Stream名: `SV_EVENT_BUS_REDIS_STREAM`（省略時: `sv.task_status`）
-          * 備考: PoC の docker ネットワーク `ai_platform_internal` は `internal: true` のため、環境によっては `localhost:6379` が到達不能になる。その場合はホストから到達できるRedisアドレス（例: コンテナIP）を `SV_EVENT_BUS_REDIS_URL_IN_HOST` に設定する。
-       * “逐次通知の観測” は、`SV_EVENT_BUS_TYPE=stdout` により標準出力へJSONイベントとして出せる（外部Pushではなくローカル観測）。
-      * Webhook送信など（HTTP Push）として統合された実装は未整備。
-    * 影響:
-       * Redis Streams を使えば PoC 段階でも “逐次通知（非同期連携基盤へPush相当）” を実測できる。
-       * それ以外（Webhook/Kafka等）に寄せる場合は、通知先とイベント粒度（status/sub_status/ログ/成果物）を設計し、EventBus 実装と設定注入（compose/env）を追加する必要がある。
+   * 現状:
+      * SV内部では `TaskStatus` を `publish_task_status()` で発行している（例: started/configured/progress/finished/error）。
+      * 既定の EventBus は `noop`（環境変数 `SV_EVENT_BUS_TYPE` 未設定の場合）で、PoC の標準実行経路（CLI / テストクライアント）ではイベントは転送されない。
+      * EventBus 実装（用途別）:
+         * `noop`: 何もしない（既定）。
+         * `stdout`: 標準出力へJSONイベントとして出力（外部Pushではなくローカル観測）。
+         * `memory`: テスト用（プロセス内のバッファ）。
+         * `redis`（Redis Streams）: PoC向けの逐次通知経路（`SV_EVENT_BUS_TYPE=redis`）。
+            * 例: `SV_EVENT_BUS_TYPE=redis`
+            * 接続先: `SV_EVENT_BUS_REDIS_URL`（最優先）
+            * 実行場所による切替（推奨）: `SV_EVENT_BUS_REDIS_URL_IN_HOST` / `SV_EVENT_BUS_REDIS_URL_IN_CONTAINER`
+            * Stream名: `SV_EVENT_BUS_REDIS_STREAM`（省略時: `sv.task_status`）
+            * 到達性メモ: PoC の docker ネットワーク `ai_platform_internal` は `internal: true`（保護領域）を想定する。
+               * Redis を保護領域（internal network）にのみ配置した場合、ホスト実行のSVからRedisへ到達できるとは限らない（環境依存。WSL2/Linuxでは docker bridge のIP直指定で到達できる場合がある一方、Docker Desktop（Windows/Mac）では到達できないことが多い）。
+               * 当面の方針（DoODは採用しない）としてSVをホスト上で実行する場合は、`SV_EVENT_BUS_REDIS_URL` / `SV_EVENT_BUS_REDIS_URL_IN_HOST` に「ホストから到達できるアドレス」を明示して運用する。
+               * 将来方針: SV を保護領域に閉じたい場合は、(a) executor を別サービス化して SV は HTTP クライアント化する、または (b) 境界でイベントを中継する adapter/bridge（dual-homed）を別コンポーネントとして設ける（アプリ層自身は閉域のまま）。
+            * PoCの方針: “逐次通知の外部化” は Redis Streams（`SV_EVENT_BUS_TYPE=redis`）に寄せ、Webhook送信など（HTTP Push）として統合された実装はスコープ外とする。
 
 4. HITL（Human in the loop）はCLI統合は進んだが、非同期HITLは計画境界まで
    * 方針/期待: 「もっと情報が必要」「この後どうしますか？」等の回答に対し、ユーザー入力待ち（非同期HITL）を実装する。
@@ -77,48 +135,4 @@ AIエージェントの一般的な用語として「スーパーバイザー」
    * 方針/期待: Bearer等を引数/環境変数で受け取り、workspace 内の MCP 定義へ反映する。
    * 現状: SV→Executor のツール引数は `prompt`/`zip`/`initial_files`/`timeout` が中心で、Bearer等を受け取って workspace 設定（MCP定義）へ反映する処理が見当たらない。
    * 影響: “実行時に注入された認証情報で MCP を呼ぶ”ユースケースが、現状のSV経路では成立しにくい。
-
-
-### 自律型エージェントの実装方針
-* Claude Code、Cline CLI、OpenCodeのようなコーディングエージェントをDockerコンテナ上で実行する。
-  * コーディングエージェントには、ソースコードやログファイル、実行の前提となるデータファイルを格納したワークスペースを
-ホスト側から渡す。
-  * ワークスペースにはAGENT.mdや利用可能なMCPの定義を記述した設定ファイルも格納する。
-* Egress 制御（Dockerネットワーク内のみ許可・暫定）
-   * 方針/期待: 「LiteLLM Proxy を経由しない不正な LLM 通信のネットワーク遮断（Egress制御）」を実行時ゲートとして担保。
-   * 現状: `all-in-on-image` の `init-firewall.sh` で `iptables -P OUTPUT DROP` を既定にし、`127.0.0.0/8` とコンテナ所属のDockerサブネット宛のみ許可する（サブネットはデフォルトルートのIFから自動検出）。
-   * 影響/評価: サンドボックスから外部インターネット等への直接通信は遮断される。Dockerネットワーク内（例: LiteLLM Proxy等）へのアクセスは可能。
-* 自律型エージェントの `task_id` は外部から指定可能で、未指定の場合はUUID等で自動採番する。
-
-* サンプル実装の方針
-   * Dockerコンテナのサンプル実装を[all-in-on-image](../../app/docker/autonomous-agent-executor/images/all-in-on-image)に作成する。
-   * Dockerコンテナの操作をPythonから行うサンプル実装を[ai_platform_samplelib/application/autonomous](../../app/ai-platform-samplelib/src/ai_platform_samplelib/application/autonomous)に作成する。
-   * Dockerコンテナの操作をPythonから行うサンプル実装のテストクライアント(シェルスクリプト)を[test/application/autonomous](../../test/application/autonomous)に配置する。
-
-
-#### 乖離点の列挙（暫定・優先判断は別途）
-3. 機密情報の「注入」よりも「ハードコード/配布ファイルへの固定値」が中心
-   * 方針/期待: ウォームプール等を見据えた「実行直前の機密注入」（永続化しない）を志向。
-   * 現状: `.env_template` や `opencode.jsonc` などに API key が固定値として記載されている箇所がある（PoC用と推測されるが、方針とは方向性が異なる）。
-   * 影響: 誤って別環境へ持ち出す/ログ等へ露出するリスクが上がる。将来の「注入方式」への移行時に差し替えコストが発生し得る。
-
-4. workspace に置く想定の `AGENT.md` が見当たらない
-   * 方針/期待: workspace に `AGENT.md`（エージェント運用ルール等）を格納して渡す。
-   * 現状: リポジトリ内に `AGENT.md` が見当たらず、現行フロー上どこで生成/配置するかも不明。
-   * 影響: “何をしてよいか/だめか”の制約を workspace 側で与えづらく、運用ポリシーの具体化が進みにくい。
-
-5. MCP 認証情報の「受け取り→workspace内設定反映」の経路が薄い
-   * 方針/期待: Bearer トークン等を引数/環境変数で受け取り、workspace 内の MCP 定義へ反映。
-   * 現状: `create_opencode_json.py` は LLM 接続設定（provider/model/baseURL）中心で、`config/common/opencode.jsonc` の MCP 定義は固定値になっている。
-   * 影響: “実行時に注入された認証情報で MCP を呼ぶ”ユースケースが、今の default 設定では成立しにくい。
-
-6. 生成物（`src-updated`）内に環境ファイルが混在し、設定キーも揺れている
-   * 方針/期待: 実行時に参照される env キー（例: `COMPOSE_DIRECTORY`）が一貫していること。
-   * 現状: `test/application/autonomous/src-updated/` に過去の `.env_*` が残っており、`COMPOSE_PROJECT_DIRECTORY` のように実装が参照しないキーも含まれる。
-   * 影響: 人手運用時に誤って参照/コピーされやすく、トラブルシュートが難しくなる。
-
-7. ウォームプール/Speculative Boot 等の性能方針は未実装（PoC段階）
-   * 方針/期待: コールドスタート遅延を隠蔽するための投機起動・ウォームプール。
-   * 現状: タスクごとに workspace を切り、コンテナ起動・監視・終了後 remove までの基本線はあるが、ウォームプール等は未実装。
-   * 影響: コールドスタート時間がそのままユーザー体験に跳ねる。将来拡張の設計余地を残す必要がある。
 
