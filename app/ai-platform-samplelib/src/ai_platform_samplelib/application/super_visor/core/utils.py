@@ -241,6 +241,8 @@ def poll_status(task_id: str, timeout_sec: int) -> Dict[str, Any]:
     base_url = ServerConfig.load_from_env().executor_base_url
     deadline = time.time() + timeout_sec
 
+    terminal_sub_status = {"completed", "failed", "timeout", "cancelled"}
+
     while True:
         # NOTE: executor 側が running 中でも stdout/stderr を返せるようになったため tail を付与
         #       （executor 側デフォルトも 200 だが明示しておく）
@@ -248,8 +250,12 @@ def poll_status(task_id: str, timeout_sec: int) -> Dict[str, Any]:
         res.raise_for_status()
         status_data = res.json()
         status = status_data.get("status")
+        sub_status = status_data.get("sub_status")
 
-        if status in ["completed", "failed", "timeout", "cancelled"]:
+        # executor(TaskStatus)のstatusは pending/running/exited なので、exited も終端とみなす
+        if status == "exited":
+            return status_data
+        if isinstance(sub_status, str) and sub_status in terminal_sub_status:
             return status_data
 
         if time.time() > deadline:

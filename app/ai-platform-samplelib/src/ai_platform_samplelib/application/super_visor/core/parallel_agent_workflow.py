@@ -891,6 +891,12 @@ class ParallelAgentWorkflow:
             auto_approve = bool(state.get("auto_approve"))
             trace_id = state.get("trace_id")
 
+            workspace_path = None
+            if source_dir is not None:
+                workspace_path = str(source_dir.resolve())
+            elif isinstance(source_dirs, list) and source_dirs:
+                workspace_path = str(source_dirs[0].resolve())
+
             # ツール選択（ローカル優先、次にzip、最後に通常）
             tool = None
             tool_args: Dict[str, Any] = {"prompt": prompt}
@@ -914,18 +920,17 @@ class ParallelAgentWorkflow:
                 tool_args["timeout"] = 600
                 if trace_id:
                     tool_args["trace_id"] = trace_id
-            elif "run_autonomous_agent_executor_zip" in tools_by_name and (zip_path or source_dir or source_dirs):
-                tool = tools_by_name["run_autonomous_agent_executor_zip"]
-                if zip_path:
-                    tool_args["zip_path"] = zip_path
-                elif source_dir is not None:
-                    tool_args["dir_path"] = str(source_dir)
-                elif source_dirs is not None and source_dirs:
-                    tool_args["dir_path"] = str(source_dirs[0])
-                tool_args["timeout"] = 900
             elif "run_autonomous_agent_executor" in tools_by_name:
                 tool = tools_by_name["run_autonomous_agent_executor"]
+                if not workspace_path:
+                    raise RuntimeError(
+                        "workspace_path is required for run_autonomous_agent_executor. "
+                        "Provide source_dir/source_dirs (shared workspace) in the workflow state."
+                    )
+                tool_args["workspace_path"] = workspace_path
                 tool_args["timeout"] = 600
+                if trace_id:
+                    tool_args["trace_id"] = trace_id
             else:
                 raise RuntimeError(f"No suitable executor tool found. tools={list(tools_by_name.keys())}")
 

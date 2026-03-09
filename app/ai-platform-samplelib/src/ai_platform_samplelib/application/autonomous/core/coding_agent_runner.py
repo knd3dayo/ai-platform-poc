@@ -19,18 +19,30 @@ class CodingAgentRunner:
     
     """
 
-    def __init__(self, compose_config: ComposeConfig, coding_agent_config: CodingAgentConfig, task_id: Optional[str] = None):
+    def __init__(
+        self,
+        compose_config: ComposeConfig,
+        coding_agent_config: CodingAgentConfig,
+        task_id: Optional[str] = None,
+        workspace_path: Optional[Union[str, pathlib.Path]] = None,
+    ):
 
         self.compose_config = compose_config
         self.coding_agent_config = coding_agent_config
         self.task_id = task_id or str(uuid.uuid4())  # タスクごとに一意のIDを生成
-        self.workspace = pathlib.Path(self.coding_agent_config.workspace_root) / self.task_id
+        if workspace_path is not None:
+            self.workspace = pathlib.Path(workspace_path)
+        else:
+            self.workspace = pathlib.Path(self.coding_agent_config.workspace_root) / self.task_id
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.command = shlex.split(self.compose_config.compose_command)
         self.detach = True  # デフォルトはバックグラウンド実行
         self.container = None
         self.task_status = TaskStatus(task_id=self.task_id)
         self.task_status.pendding()
+
+        # 共有workspaceを使う場合に、後段（/status や artifacts算出）で参照できるよう保存しておく
+        self.task_status.metadata["workspace_path"] = self.workspace.resolve().as_posix()
 
 
     def prepare_workspace(self, 
@@ -130,7 +142,8 @@ class CodingAgentRunner:
         zip_file: Optional[UploadFile] = None,
         source_paths: Optional[list[pathlib.Path]] = None,
         task_id: Optional[str] = None,
-        detach: bool = True
+        detach: bool = True,
+        workspace_path: Optional[Union[str, pathlib.Path]] = None,
     ) -> "CodingAgentRunner":
         """
         インスタンス生成からコンテナ起動までを一括で行うエントリーポイント
@@ -141,7 +154,8 @@ class CodingAgentRunner:
         runner = cls(
             task_id=task_id, 
             compose_config=compose_config,
-            coding_agent_config=coding_agent_config
+            coding_agent_config=coding_agent_config,
+            workspace_path=workspace_path,
         )
 
         runner.detach = detach

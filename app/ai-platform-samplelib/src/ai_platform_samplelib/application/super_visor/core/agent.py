@@ -111,11 +111,25 @@ async def _run_executor_local_impl(
     elif isinstance(normalized_source_dir, pathlib.Path):
         normalized_sources.append(normalized_source_dir)
 
+    workspace_path: Optional[pathlib.Path] = None
+    source_paths_for_runner: Optional[list[pathlib.Path]] = normalized_sources or None
+    if len(normalized_sources) == 1:
+        candidate = normalized_sources[0]
+        try:
+            if candidate.exists() and candidate.is_dir():
+                workspace_path = candidate.resolve()
+                # 共有workspaceを直接使う場合は、コピー用の source_paths は渡さない
+                source_paths_for_runner = None
+        except Exception:
+            # resolve/exists できない環境でも従来挙動にフォールバック
+            workspace_path = None
+
     runner = await CodingAgentRunner.create_runner(
         prompt=prompt,
-        source_paths=normalized_sources or None,
+        source_paths=source_paths_for_runner,
         task_id=task_id,
         detach=True,
+        workspace_path=str(workspace_path) if workspace_path else None,
     )
 
     if trace_id:

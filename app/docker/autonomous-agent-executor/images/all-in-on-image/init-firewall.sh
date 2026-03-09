@@ -42,7 +42,19 @@ primary_iface="$(ip -o route show default 2>/dev/null | awk '{print $5; exit}')"
 [ -n "${primary_iface}" ] || primary_iface="$(ip -o link show | awk -F': ' '$2 != "lo" {print $2; exit}')"
 [ -n "${primary_iface}" ] || { echo "Could not determine primary network interface" >&2; exit 1; }
 
+# Docker環境では `eth0@if123` のような表記になることがあるが、
+# `ip addr show dev` では `eth0` のように @ 以降を除去したIF名が必要。
+primary_iface="${primary_iface%%@*}"
+
 docker_cidr="$(ip -o -4 addr show dev "${primary_iface}" 2>/dev/null | awk '{print $4; exit}')"
+
+# default route が無い・IF名の解決に失敗する等で取れない場合は、IPv4が付いている最初のIFを使う
+if [ -z "${docker_cidr}" ]; then
+	primary_iface="$(ip -o -4 addr show 2>/dev/null | awk '$2 != "lo" {print $2; exit}')"
+	primary_iface="${primary_iface%%@*}"
+	docker_cidr="$(ip -o -4 addr show dev "${primary_iface}" 2>/dev/null | awk '{print $4; exit}')"
+fi
+
 [ -n "${docker_cidr}" ] || { echo "Could not determine IPv4 CIDR for interface: ${primary_iface}" >&2; exit 1; }
 
 flush_filter

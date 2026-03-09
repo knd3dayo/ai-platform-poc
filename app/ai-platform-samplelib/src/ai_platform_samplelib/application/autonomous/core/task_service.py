@@ -181,8 +181,12 @@ class TaskService:
         
 
     @classmethod
-    async def run_task(cls, runner: CodingAgentRunner,
-                       timeout: int, wait: bool) -> AsyncGenerator[TaskStatus, None]:
+    async def run_task(
+        cls,
+        runner: CodingAgentRunner,
+        timeout: int,
+            wait: bool,
+    ) -> AsyncGenerator[TaskStatus, None]:
         """タスクの開始、監視、完了後の同期までを一括管理"""
         container = runner.run()
         # container_id が無いと logs/状態取得ができず、running のまま固まるため必ず保存する
@@ -238,12 +242,22 @@ class TaskService:
     @classmethod
     async def download_artifacts_zip(cls, task_id: str):
         """タスクの作業用ディレクトリをZIP化して返します。"""
-        task_dir =  TaskManager.get_projects_root() / task_id
+        # 共有workspace モードでは task.metadata["workspace_path"] を優先する
+        TaskManager.load_tasks()
+        task = TaskManager.get_task(task_id)
+        task_dir = None
+        if task and isinstance(task.metadata, dict):
+            ws = task.metadata.get("workspace_path")
+            if isinstance(ws, str) and ws:
+                task_dir = pathlib.Path(ws)
+
+        if task_dir is None:
+            task_dir = TaskManager.get_projects_root() / task_id
+
         if not task_dir.exists() or not task_dir.is_dir():
             raise HTTPException(status_code=404, detail="Artifacts directory not found")
 
         # 実行中は結果が不安定になり得るので、原則 completed のみ許可
-        task = TaskManager.get_task(task_id)
         if task and task.status not in ("completed", "failed"):
             raise HTTPException(status_code=409, detail=f"Task is {task.status}, artifacts may not be ready for download")
 

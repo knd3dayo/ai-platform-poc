@@ -64,7 +64,7 @@ def test_task_service_run_does_not_pass_background_tasks_and_normalizes_source_p
 
         return _Runner(task_id or "dummy")
 
-    async def fake_run_task(runner, timeout: int, dest: Path, wait: bool):
+    async def fake_run_task(runner, timeout: int, wait: bool):
         yield TaskStatus(task_id=runner.task_id, status="running", sub_status="starting")
         yield TaskStatus(task_id=runner.task_id, status="exited", sub_status="completed")
 

@@ -126,6 +126,24 @@ class TaskManager:
                     else:
                         task.failed()
                     task.stdout = logs_str
+
+                    # workspace_path が分かる場合は、成果物一覧をオンデマンドで再計算する
+                    try:
+                        ws = None
+                        if isinstance(task.metadata, dict):
+                            ws = task.metadata.get("workspace_path")
+                        if isinstance(ws, str) and ws:
+                            base = pathlib.Path(ws)
+                            if base.exists() and base.is_dir():
+                                task.artifacts = [
+                                    str(p.relative_to(base).as_posix())
+                                    for p in base.rglob("*")
+                                    if p.is_file()
+                                ]
+                    except Exception:
+                        # 成果物一覧の計算失敗で status を落とさない
+                        pass
+
                     TaskManager.upsert_task(task)
                     return task
 

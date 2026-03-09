@@ -6,7 +6,7 @@
 
 ### 1-1. Dockerによる起動
 
-既存の `ai-platform-net` に参加させ、各コンポーネントが名前解決できるようにします。
+既存の `ai_platform_internal` に参加させ、各コンポーネントが名前解決できるようにします。
 
 ```yaml
 # 0_zitadel/docker-compose.yml
@@ -16,10 +16,10 @@ services:
     # ... (省略: ポート設定、環境変数等) ...
     networks:
       - default
-      - ai_platform_net
+            - ai_platform_internal
 
 networks:
-  ai_platform_net:
+    ai_platform_internal:
     external: true
 
 ```
