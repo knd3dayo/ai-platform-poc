@@ -27,7 +27,8 @@ dependencies = [
     "langgraph-checkpoint",
     "langgraph-checkpoint-sqlite",
     "uvicorn",
-    "docker"
+    "docker",
+    "redis>=5.0.0"
 ]
 
 [tool.setuptools.packages.find]

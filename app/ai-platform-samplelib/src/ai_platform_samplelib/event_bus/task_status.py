@@ -35,7 +35,7 @@ class StdoutEventBus:
     def publish_task_status(self, status: TaskStatus, *, attributes: Optional[Dict[str, Any]] = None) -> None:
         ev = TaskStatusEvent(task_status=status, attributes=attributes or {})
         # ensure_ascii=False で日本語が潰れないようにする
-        print(json.dumps(ev.model_dump(), ensure_ascii=False))
+        print(json.dumps(ev.model_dump(mode="json"), ensure_ascii=False))
 
 
 class InMemoryEventBus:
@@ -71,7 +71,7 @@ def get_event_bus(event_bus_type: str | None = None) -> TaskStatusEventBus:
     Redis 等に依存しないモック実装を優先する。
 
     Args:
-        event_bus_type: "noop" | "stdout" | "memory"
+        event_bus_type: "noop" | "stdout" | "memory" | "redis"
             None の場合は環境変数 `SV_EVENT_BUS_TYPE` を参照する。
     """
 
@@ -81,5 +81,9 @@ def get_event_bus(event_bus_type: str | None = None) -> TaskStatusEventBus:
         return StdoutEventBus()
     if typ == "memory":
         return get_in_memory_event_bus()
+    if typ == "redis":
+        from ai_platform_samplelib.event_bus.redis_stream import RedisStreamEventBus
+
+        return RedisStreamEventBus()
 
     return NoopEventBus()

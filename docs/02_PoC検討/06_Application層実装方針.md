@@ -48,15 +48,22 @@ AIエージェントの一般的な用語として「スーパーバイザー」
   * SV型エージェントと自律型エージェントの情報共有、進捗管理のためのファイルをワークスペース上に配置して、各々がそれを参照したうえで処理を進めること。
   
 #### 現状との乖離（暫定・SV型エージェント）
-3. `TaskStatus` の逐次通知がSV経路に乗っていない
+3. `TaskStatus` の逐次通知は既定では外部通知されない（EventBus未設定時）
    * 方針/期待: 自律型エージェントの処理状況を `TaskStatus` として逐次受け取り、ユーザーまたは非同期連携基盤へ通知する。
     * 現状:
        * SV側の状態管理は `TaskStatus` に統一済み。ただしSV APIは削除しており、ユーザー向け取得手段は現状CLI表示が中心。
-       * SV内部では `TaskStatus` を `publish_task_status()` で発行している（例: started/configured/progress/finished/error）。ただしEventBusは PoC 向けモック（`noop/stdout/memory`）のみで、既定値は `noop`（環境変数 `SV_EVENT_BUS_TYPE` 未設定の場合）。そのため PoC の標準実行経路（CLI / テストクライアント）では、外部の非同期連携基盤へは実質的に通知されない。
-       * なお “逐次通知の観測” 自体は、`SV_EVENT_BUS_TYPE=stdout` により標準出力へJSONイベントとして出せる（外部Pushではなくローカル観測）。
-      * Webhook送信などのデモは別途検討対象だが、`TaskStatus` の逐次通知として統合された実装は未整備。
+       * SV内部では `TaskStatus` を `publish_task_status()` で発行している（例: started/configured/progress/finished/error）。既定の EventBus は `noop`（環境変数 `SV_EVENT_BUS_TYPE` 未設定の場合）で、PoC の標準実行経路（CLI / テストクライアント）では外部通知されない。
+       * モック（`noop/stdout/memory`）に加え、PoC向けの Redis Streams 実装（`SV_EVENT_BUS_TYPE=redis`）を追加済み。
+          * 例: `SV_EVENT_BUS_TYPE=redis`
+          * 接続先: `SV_EVENT_BUS_REDIS_URL`（最優先）
+          * 実行場所による切替（推奨）: `SV_EVENT_BUS_REDIS_URL_IN_HOST` / `SV_EVENT_BUS_REDIS_URL_IN_CONTAINER`
+          * Stream名: `SV_EVENT_BUS_REDIS_STREAM`（省略時: `sv.task_status`）
+          * 備考: PoC の docker ネットワーク `ai_platform_internal` は `internal: true` のため、環境によっては `localhost:6379` が到達不能になる。その場合はホストから到達できるRedisアドレス（例: コンテナIP）を `SV_EVENT_BUS_REDIS_URL_IN_HOST` に設定する。
+       * “逐次通知の観測” は、`SV_EVENT_BUS_TYPE=stdout` により標準出力へJSONイベントとして出せる（外部Pushではなくローカル観測）。
+      * Webhook送信など（HTTP Push）として統合された実装は未整備。
     * 影響:
-       * “逐次通知（非同期連携基盤へPush）”に寄せる場合は、通知先（Webhook/Event Bus）とイベント粒度（status/sub_status/ログ/成果物）を設計し、EventBus の実装（例: Redis/Kafka/HTTP など）と設定注入（compose/env）を追加する必要がある。
+       * Redis Streams を使えば PoC 段階でも “逐次通知（非同期連携基盤へPush相当）” を実測できる。
+       * それ以外（Webhook/Kafka等）に寄せる場合は、通知先とイベント粒度（status/sub_status/ログ/成果物）を設計し、EventBus 実装と設定注入（compose/env）を追加する必要がある。
 
 4. HITL（Human in the loop）はCLI統合は進んだが、非同期HITLは計画境界まで
    * 方針/期待: 「もっと情報が必要」「この後どうしますか？」等の回答に対し、ユーザー入力待ち（非同期HITL）を実装する。
