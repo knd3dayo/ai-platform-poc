@@ -2,7 +2,7 @@ services:
   sv-autonomous-bundle:
     build:
       context: ../../../../..
-      dockerfile: app/docker/sv-agent-executor/images/one-set-dood/Dockerfile
+      dockerfile: app/docker/autonomous-agent-executor/images/one-set-dood/Dockerfile
     image: sv-autonomous-bundle:dood-poc
     restart: unless-stopped
     ports:

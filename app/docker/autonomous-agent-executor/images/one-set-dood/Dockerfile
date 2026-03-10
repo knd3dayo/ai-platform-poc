@@ -47,7 +47,7 @@ RUN python -m pip install --no-cache-dir -U pip \
 COPY app/docker/autonomous-agent-executor/images/all-in-on-image \
   /opt/ai-platform/autonomous-agent-executor/all-in-on-image
 
-COPY app/docker/sv-agent-executor/images/one-set-dood/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY app/docker/autonomous-agent-executor/images/one-set-dood/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 ENV WORKSPACE_ROOT=/srv/ai_platform/workspaces \
