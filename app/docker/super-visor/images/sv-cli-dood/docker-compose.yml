@@ -1,0 +1,41 @@
+services:
+  super-visor-cli:
+    build:
+      context: ../../../../..
+      dockerfile: app/docker/super-visor/images/sv-cli-dood/Dockerfile
+    image: super-visor-cli:dood-poc
+    restart: "no"
+    stdin_open: true
+    tty: true
+    environment:
+      # bundle/workspace settings
+      - WORKSPACE_ROOT=/srv/ai_platform/workspaces
+      - COMPOSE_DIRECTORY=/opt/ai-platform/autonomous-agent-executor/all-in-on-image
+      - COMPOSE_FILE=docker-compose.yml
+      - COMPOSE_SERVICE_NAME=all-in-one-code-executor
+      # optional: chown workspace files to host user
+      - HOST_UID
+      - HOST_GID
+
+      # LLM settings (pass-through from host environment if set)
+      - LLM_PROVIDER
+      - LLM_MODEL
+      - LLM_API_KEY
+      - LLM_BASE_URL
+      # Optional: override base URL passed into executor container
+      - LLM_BASE_URL_IN_CONTAINER
+
+      # Optional: override the executor command
+      - COMPOSE_COMMAND
+    volumes:
+      # DoOD: host docker daemon access
+      - /var/run/docker.sock:/var/run/docker.sock
+      # shared workspaces (host path mirroring)
+      - /srv/ai_platform/workspaces:/srv/ai_platform/workspaces
+    networks:
+      - ai_platform_internal
+
+networks:
+  ai_platform_internal:
+    external: true
+    name: ai_platform_internal
