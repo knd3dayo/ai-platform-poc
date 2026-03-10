@@ -103,6 +103,17 @@ AIエージェントの一般的な用語として「スーパーバイザー」
 * 重要
   * SV型エージェントで設定したLLM_MODELなどの環境変数が自律型エージェントに確実に渡されること。
   * SV型エージェントと自律型エージェントの情報共有、進捗管理のためのファイルをワークスペース上に配置して、各々がそれを参照したうえで処理を進めること。
+
+#### PoCにおける実行形態（ワンセットDoOD）
+* PoC段階では、SV型エージェントと自律型エージェント（Executor API/ランナー）をワンセットでコンテナ化し、DoOD（docker.sock）で実行コンテナ（all-in-on-image）を起動する方式を採用する。
+   * 目的: ホスト実行/SV分離などの本番設計を先送りしつつ、閉域ネットワーク（`ai_platform_internal`）内での実行・疎通を最短で成立させる。
+   * 注意: docker.sock をマウントする方式はホストDocker操作権限を強く委譲する（PoCとして受容し、ガードレールで被害面を絞る）。
+* 共有workspaceはホスト上の固定ルート配下に作成し、SVと自律と実行コンテナが同じディレクトリを参照する。
+   * PoC固定: workspace ルートは `/srv/ai_platform/workspaces` とし、ホストとバンドルコンテナで同一絶対パスにミラーリング（bind mount）する。
+   * `workspace_path` は上記ルート配下のホスト絶対パスを使用し、ZIP upload/download は用いない。
+   * ルートの環境変数による変更は今後の検討課題とする（変更する場合も同一絶対パスのミラーリングが前提）。
+* ガードレール（PoC最低限）
+   * Executor API では `EXECUTOR_ALLOWED_WORKSPACE_ROOT=/srv/ai_platform/workspaces` を設定し、許可ルート外の `workspace_path` を拒否する。
   
 #### 現状との乖離（暫定・SV型エージェント）
 3. `TaskStatus` の逐次通知は既定では外部通知されない（`SV_EVENT_BUS_TYPE` 未設定時）
@@ -121,7 +132,7 @@ AIエージェントの一般的な用語として「スーパーバイザー」
             * Stream名: `SV_EVENT_BUS_REDIS_STREAM`（省略時: `sv.task_status`）
             * 到達性メモ: PoC の docker ネットワーク `ai_platform_internal` は `internal: true`（保護領域）を想定する。
                * Redis を保護領域（internal network）にのみ配置した場合、ホスト実行のSVからRedisへ到達できるとは限らない（環境依存。WSL2/Linuxでは docker bridge のIP直指定で到達できる場合がある一方、Docker Desktop（Windows/Mac）では到達できないことが多い）。
-               * 当面の方針（DoODは採用しない）としてSVをホスト上で実行する場合は、`SV_EVENT_BUS_REDIS_URL` / `SV_EVENT_BUS_REDIS_URL_IN_HOST` に「ホストから到達できるアドレス」を明示して運用する。
+               * PoCではワンセットDoODでSVをコンテナ内に閉じる方針のため、`SV_EVENT_BUS_REDIS_URL_IN_CONTAINER` を優先して運用する。
                * 将来方針: SV を保護領域に閉じたい場合は、(a) executor を別サービス化して SV は HTTP クライアント化する、または (b) 境界でイベントを中継する adapter/bridge（dual-homed）を別コンポーネントとして設ける（アプリ層自身は閉域のまま）。
             * PoCの方針: “逐次通知の外部化” は Redis Streams（`SV_EVENT_BUS_TYPE=redis`）に寄せ、Webhook送信など（HTTP Push）として統合された実装はスコープ外とする。
 

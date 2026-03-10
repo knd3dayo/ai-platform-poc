@@ -75,10 +75,14 @@ class CodingAgentRunner:
         # 文字列で渡された場合のみ shlex.split で分解する。
         params["command"] =  (shlex.split(self.command) if isinstance(self.command, str) else list(self.command))
         # WORKSPACE、USER_ID、GROUP_IDを設定
+        # DoOD（docker.sock）利用時は、バンドルコンテナ内の UID/GID とホスト側の所有者が
+        # 一致しないことがあるため、環境変数で上書きできるようにする。
+        uid = int(os.getenv("AI_PLATFORM_HOST_UID", str(os.getuid())))
+        gid = int(os.getenv("AI_PLATFORM_HOST_GID", str(os.getgid())))
         params["envs"] = {
             "WORKSPACE": self.workspace.as_posix(),
-            "USER_ID": str(os.getuid()),
-            "GROUP_ID": str(os.getgid()),
+            "USER_ID": str(uid),
+            "GROUP_ID": str(gid),
         }
 
         # LLM 設定をホスト環境から引き継ぐ。
@@ -106,8 +110,8 @@ class CodingAgentRunner:
             "\n".join(
                 [
                     f"WORKSPACE={self.workspace.as_posix()}",
-                    f"USER_ID={os.getuid()}",
-                    f"GROUP_ID={os.getgid()}",
+                    f"USER_ID={uid}",
+                    f"GROUP_ID={gid}",
                     "",
                 ]
             ),
@@ -116,7 +120,7 @@ class CodingAgentRunner:
 
         # クライアントは一度作れば使い回せます
         self.docker = DockerClient(
-            compose_files=[self.compose_config.get_compose_path()],
+            compose_files=self.compose_config.get_compose_paths(),
             compose_project_directory=self.compose_config.compose_directory,
             compose_env_files=[compose_env_file],
             # service_name ではなく task_id をベースにしたユニークな名前に

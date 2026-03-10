@@ -57,6 +57,30 @@ class ComposeConfig(BaseModel):
     def get_compose_path(self) -> str:
         return os.path.join(self.compose_directory, self.compose_file)
 
+    def get_compose_paths(self) -> List[str]:
+        """Return compose file paths, supporting docker-compose style COMPOSE_FILE lists.
+
+        Docker Compose supports specifying multiple compose files via COMPOSE_FILE using
+        the OS path separator (Linux/macOS: ':', Windows: ';').
+        """
+        raw = (self.compose_file or "").strip()
+        if not raw:
+            return [os.path.join(self.compose_directory, "docker-compose.yml")]
+
+        # First split using OS path separator (Compose convention)
+        parts = [p.strip() for p in raw.split(os.pathsep) if p.strip()]
+        # Allow comma-separated lists as a convenience
+        if len(parts) == 1 and "," in parts[0]:
+            parts = [p.strip() for p in parts[0].split(",") if p.strip()]
+
+        paths: List[str] = []
+        for part in parts:
+            if os.path.isabs(part):
+                paths.append(part)
+            else:
+                paths.append(os.path.join(self.compose_directory, part))
+        return paths
+
 class AutonomousAgentRequest(BaseModel):
     prompt: str = Field(..., examples=["hello.py を修正して"])
     initial_files: Optional[Dict[str, str]] = None # 事前に配置したいファイル
