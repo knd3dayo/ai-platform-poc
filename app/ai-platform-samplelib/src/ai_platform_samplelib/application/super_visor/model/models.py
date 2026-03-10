@@ -24,7 +24,7 @@ class ServerConfig(BaseModel):
 
     # ここに Supervisor の設定項目を追加していく
     llm_provider: str = "openai"  # azure / openai / local
-    llm_model: str = "gpt-4o"  # 例: gpt-4o, gpt-4o-2024-08-06, gpt-3.5-turbo
+    llm_model: str = "development"  # 例: development, development-2024-08-06, gpt-3.5-turbo
     llm_api_key: str = ""  # LLM API Key (環境変数等で管理することが望ましい)
     llm_base_url: Optional[str] = None  # 例: Azure OpenAI のエンドポイント
 
@@ -44,7 +44,7 @@ class ServerConfig(BaseModel):
         in_container = os.path.exists("/.dockerenv")
         llm_provider = os.getenv("LLM_PROVIDER", "openai")
         llm_base_url = os.getenv("LLM_BASE_URL") 
-        llm_model = os.getenv("LLM_MODEL", "gpt-4o")
+        llm_model = os.getenv("LLM_MODEL", "development")
         executor_base_url = os.getenv("EXECUTOR_BASE_URL") or ("http://host.docker.internal:7101" if in_container else "http://localhost:7101")
         executor_base_url = executor_base_url.rstrip("/")
         llm_api_key = os.getenv("LLM_API_KEY", "")

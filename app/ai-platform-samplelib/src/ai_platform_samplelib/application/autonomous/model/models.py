@@ -10,7 +10,7 @@ class CodingAgentConfig(BaseModel):
     env_file: ClassVar[str] = ".env"  # デフォルトの環境変数ファイルパス
 
     llm_provider: str = Field(..., description="LLMプロバイダーの名前（例: openai, azure, anthropic）")
-    llm_model: str = Field(..., description="LLM model to use (e.g., gpt-4o)")
+    llm_model: str = Field(..., description="LLM model to use (e.g., development)")
     llm_base_url: Optional[str] = Field(None, description="Base URL for the LLM API")
     workspace_root: str = Field(default="/tmp/autonomous_agent_tasks", description="Root directory for task workspaces")
     
@@ -23,7 +23,7 @@ class CodingAgentConfig(BaseModel):
         load_dotenv(cls.env_file)  # 指定された環境変数ファイルをロード
         params = {
             "llm_provider": os.getenv("LLM_PROVIDER", "openai"),
-            "llm_model": os.getenv("LLM_MODEL", "gpt-4o"),
+            "llm_model": os.getenv("LLM_MODEL", "development"),
             "llm_base_url": os.getenv("LLM_BASE_URL"),
             "workspace_root": os.getenv("WORKSPACE_ROOT", "/tmp/autonomous_agent_tasks")
         }

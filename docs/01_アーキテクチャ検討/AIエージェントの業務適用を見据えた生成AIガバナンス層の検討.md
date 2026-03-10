@@ -548,7 +548,7 @@ async def proxy_chat(request: Request):
     # --- Phase 2: Model Routing & Logging (LiteLLM + Langfuse) ---
     # 予算管理やモデルの切り替え（例: GPT-4 -> Claude 3.5）を透過的に行う
     response = completion(
-        model="azure/gpt-4o",  # アプリ側はモデルを知らなくて良い
+        model="azure/development",  # アプリ側はモデルを知らなくて良い
         messages=messages,
         callbacks=[langfuse.LiteLLMCallback()] # 全ログをLangfuseへ送信
     )

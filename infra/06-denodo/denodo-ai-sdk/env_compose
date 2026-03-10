@@ -1,7 +1,7 @@
 LLM_PROVIDER=openai
 LLM_API_KEY=sk-poc-master-key-12345
 LLM_BASE_URL_IN_CONTAINER=http://litellm:4000
-LLM_MODEL=gpt-4o
+LLM_MODEL=development
 
 # Route outbound HTTP(S) via Squid proxy in ai_platform_net.
 # Note: Keep Docker-internal services in NO_PROXY.
