@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 # 内部パッケージのインポート
-from ..core.coding_agent_runner import CodingAgentRunner
+from .docker_coding_agent_runner import CodingAgentRunner
 from ..model.models import TaskStatus, ComposeConfig
 
 class AbstractActions(ABC):
@@ -37,12 +37,6 @@ class AbstractActions(ABC):
         pass
     @abstractmethod
     def after_get_status_action(self, task_id: str, status_data: TaskStatus) -> None:
-        pass
-    @abstractmethod
-    def before_pull_action(self, runner: CodingAgentRunner) -> None:
-        pass
-    @abstractmethod
-    def pull_progress_action(self, func: Callable, dest: Path):
         pass
 
     @abstractmethod

@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from ai_platform_samplelib.application.autonomous.core.task_service import TaskService
+from ai_platform_samplelib.application.autonomous.core.docker_task_service import TaskService
 from ai_platform_samplelib.application.autonomous.model.models import TaskStatus
-from ai_platform_samplelib.application.autonomous.core import task_service as task_service_module
+from ai_platform_samplelib.application.autonomous.core import docker_task_service as task_service_module
 from ai_platform_samplelib.application.autonomous.core.abstract_actions import AbstractActions
 
 class _DummyActions(AbstractActions):
@@ -25,10 +25,6 @@ class _DummyActions(AbstractActions):
     def after_complete_action(self, runner) -> None:
         return
     
-    def pull_progress_action(self, func, dest: Path) -> None:
-        func()
-        return
-    
     def after_task_not_found_action(self) -> None:
         return
 
@@ -41,9 +37,6 @@ class _DummyActions(AbstractActions):
     def after_get_status_action(self, task_id: str, status_data: TaskStatus) -> None:
         return
 
-    def before_pull_action(self, runner) -> None:
-        return
-    
     def prune_progress_action(self, generator) -> None:
         for _ in generator:
             pass

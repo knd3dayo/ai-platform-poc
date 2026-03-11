@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, List, ClassVar, Literal
 from datetime import datetime
 from pydantic import BaseModel, Field, field_serializer
 import os
+import uuid
 from dotenv import load_dotenv
 
 class CodingAgentConfig(BaseModel):
@@ -95,8 +96,8 @@ class TaskStatus(BaseModel):
         "pending", "running", "exited"
         ]] = None
     sub_status: Optional[Literal[
-        "not-started", "running-foreground", "running-background","pulling", "starting", "failed", "timeout", "cancelled", "completed"
-        ]] = None  # より詳細な状態（例: "pulling", "starting", "running", "exited"など）
+        "not-started", "running-foreground", "running-background", "starting", "failed", "timeout", "cancelled", "completed"
+        ]] = None  # より詳細な状態（例: "starting", "running", "exited"など）
     stdout: Optional[str] = None
     stderr: Optional[str] = None
     artifacts: Optional[List[str]] = None
@@ -118,6 +119,16 @@ class TaskStatus(BaseModel):
             return {**metadata, "server_logs": list(server_logs)}
 
         return metadata
+
+    @classmethod
+    def create(cls, task_id: Optional[str] = None) -> "TaskStatus":
+        """新規タスク作成用のファクトリーメソッド"""
+        return TaskStatus(
+            task_id=task_id or str(uuid.uuid4()),
+            status="pending",
+            sub_status="not-started",
+            created_at=datetime.utcnow()
+        )
 
     def pendding(self):
         self.status = "pending"

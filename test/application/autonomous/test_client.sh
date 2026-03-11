@@ -40,4 +40,4 @@ fi
 # テストクライアントの起動スクリプト
 . ${AI_PLATFORM_POC_ROOT}/app/ai-platform-samplelib/.venv/bin/activate
 PROMPT=${2:-"test_client.sh スクリプトを日本語で説明して。"}
-python -m ai_platform_samplelib.application.autonomous.cli.main run -s . -s ${CODE_AGENT_CONFIG_PATH} "$PROMPT"
+python -m .main run -s . -s ${CODE_AGENT_CONFIG_PATH} "$PROMPT"

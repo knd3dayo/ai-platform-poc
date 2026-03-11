@@ -2,17 +2,27 @@ from __future__ import annotations
 
 import os
 import pathlib
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type
 
 from fastapi import FastAPI, HTTPException
 
-from ..core.coding_agent_runner import CodingAgentRunner
+from ..core.docker_coding_agent_runner import CodingAgentRunner as DockerCodingAgentRunner
+from ..core.subprocess_coding_agent_runner import SubprocessCodingAgentRunner
 from ..core.task_manager import TaskManager
 
 from .models import ExecuteRequest, ExecuteResponse
 
 
 app = FastAPI(title="Autonomous Agent Executor API", version="0.1")
+
+
+def _select_runner_class() -> Type[Any]:
+    backend = (os.getenv("AI_PLATFORM_TASK_BACKEND") or "docker").strip().lower()
+    if backend in ("docker", "compose"):
+        return DockerCodingAgentRunner
+    if backend in ("subprocess", "process"):
+        return SubprocessCodingAgentRunner
+    raise HTTPException(status_code=400, detail=f"Unknown AI_PLATFORM_TASK_BACKEND: {backend}")
 
 
 def _validate_workspace_path(workspace_path: str) -> pathlib.Path:
@@ -51,7 +61,8 @@ async def execute(req: ExecuteRequest) -> ExecuteResponse:
     workspace_dir = _validate_workspace_path(req.workspace_path)
 
     # task_id は外部から指定可（未指定ならcreate_runner内で採番）
-    runner = await CodingAgentRunner.create_runner(
+    Runner = _select_runner_class()
+    runner = await Runner.create_runner(
         prompt=req.prompt,
         task_id=req.task_id,
         detach=True,
@@ -60,8 +71,8 @@ async def execute(req: ExecuteRequest) -> ExecuteResponse:
     if req.trace_id:
         runner.task_status.trace_id = req.trace_id
 
-    container = runner.run()
-    runner.task_status.container_id = getattr(container, "id", None)
+    run_result = runner.run()
+    runner.task_status.container_id = getattr(run_result, "id", None)
     runner.task_status.starting_background()
     TaskManager.upsert_task(runner.task_status)
 

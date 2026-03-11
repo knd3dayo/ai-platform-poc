@@ -12,9 +12,8 @@ from langgraph.graph import MessagesState
 from langchain_core.tools import tool
 
 from ..core.utils import LLMUtils
-from ai_platform_samplelib.application.autonomous.core.coding_agent_runner import CodingAgentRunner
+from ai_platform_samplelib.application.autonomous.core.task_service import CodingAgentRunner, TaskService
 from ai_platform_samplelib.application.autonomous.core.task_manager import TaskManager
-from ai_platform_samplelib.application.autonomous.core.task_service import TaskService
 
 # ==========================================
 # 1. ローカル実行ツール (変更なし)

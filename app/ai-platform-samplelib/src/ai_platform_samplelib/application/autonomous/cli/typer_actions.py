@@ -8,15 +8,13 @@ import signal
 from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
-from pathlib import Path
 from python_on_whales import docker as whales
 
 
 # 内部パッケージのインポート
 from ..core.abstract_actions import AbstractActions
-from ..model.models import TaskStatus, ComposeConfig
-from ..model.models import TaskStatus, ComposeConfig
-from ..core.coding_agent_runner import CodingAgentRunner
+from typing import Any
+from ..model.models import TaskStatus
 
 from ..core.task_manager import TaskManager
 
@@ -37,8 +35,18 @@ class TyperActions(AbstractActions) :
         # 実際には ComposeRunner.get_status() を呼び出して、タスクの状態やログを取得することになります。
         last_line_count = 0
         last_stderr_count = 0
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         stop_event = asyncio.Event()
+
+        def handle_interrupt():
+            stop_event.set()
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, handle_interrupt)
+            except NotImplementedError:
+                # Windows等では未対応のことがある
+                pass
 
         with Live(Spinner("dots", text="実行中...", style="cyan"), refresh_per_second=4, transient=True) as live:
             try:
@@ -71,7 +79,10 @@ class TyperActions(AbstractActions) :
                 self.console.print(f"[bold red]❌ エラーが発生しました: {e}[/bold red]")
             finally:
                 for sig in (signal.SIGINT, signal.SIGTERM):
-                    loop.remove_signal_handler(sig)
+                    try:
+                        loop.remove_signal_handler(sig)
+                    except Exception:
+                        pass
 
         # ループを抜けた後の処理
         status_data = await TaskManager.get_status(tid)
@@ -81,13 +92,13 @@ class TyperActions(AbstractActions) :
         # 中断時の処理
         if stop_event.is_set():
             if typer.confirm("⚠️ 中断しました。コンテナを停止して削除しますか？", default=True):
-                await TaskManager.cancel_task(tid)
-                self.console.print(f"🛑 タスク {tid} をキャンセルしました。")
+                await TaskManager.cancel_task(status_data.task_id)
+                self.console.print(f"🛑 タスク {status_data.task_id} をキャンセルしました。")
                 status_data.cancelled()  # キャンセルフラグを立てる（必要に応じて）
         return status_data
 
     def after_complete_action(
-            self, runner: CodingAgentRunner) -> None:
+            self, runner: Any) -> None:
         self.console.print(f"[bold green]✅ タスクが完了しました！[/bold green]")
 
     def after_task_not_found_action(self) -> None:
@@ -107,21 +118,6 @@ class TyperActions(AbstractActions) :
             self.console.print(f"\n[STDERR]\n{status_data.stderr}", style="red")
         if status_data.artifacts:
             self.console.print(f"\n[Artifacts]\n{', '.join(status_data.artifacts)}")
-
-    def before_pull_action(self, runner: CodingAgentRunner) -> None:
-        if not runner.workspace.exists():
-            # 赤文字でエラーを表示して終了
-            typer.secho(f"❌ エラー: タスクディレクトリ {runner.workspace} が見つかりません。", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=1)
-
-    def pull_progress_action(self, func: Callable, dest: Path):
-        try:
-            # 展開先をクリーンアップするか、上書きコピー
-            func()
-            typer.secho(f"✅ 成果物を {dest} に同期しました。", fg=typer.colors.GREEN)
-        except Exception as e:
-            typer.secho(f"❌ 同期中にエラーが発生しました: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=1)
 
     def prune_progress_action(self, generator: Generator[str, None, None]):
         """管理対象の孤立したコンテナを強制掃除します (APIサーバーの終了処理と同等)"""
