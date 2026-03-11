@@ -8,7 +8,7 @@ from .subprocess.subprocess_task_service import SubprocessTaskService
 
 
 def select_task_service(backend: str | None = None) -> AbstractTaskService:
-    b = (backend or os.getenv("AI_PLATFORM_TASK_BACKEND") or "docker").strip().lower()
+    b = (backend or os.getenv("AI_PLATFORM_TASK_BACKEND") or "process").strip().lower()
     if b in ("docker", "compose"):
         return DockerTaskService()
     if b in ("subprocess", "process"):

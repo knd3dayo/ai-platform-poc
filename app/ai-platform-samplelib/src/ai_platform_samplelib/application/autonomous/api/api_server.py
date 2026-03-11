@@ -1,86 +1,20 @@
 from __future__ import annotations
 
-import os
-import pathlib
-from typing import Any, Dict, Optional
+from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 
-from ..core.task_service_factory import select_task_service
-from ..core.task_manager import TaskManager
-
-from .models import ExecuteRequest, ExecuteResponse
+from ..core.endopoint import EndPoint
+from ..model.models import CancelResponse, ExecuteResponse, HealthzResponse, TaskStatus
 
 
 app = FastAPI(title="Autonomous Agent Executor API", version="0.1")
 
 
-def _validate_workspace_path(workspace_path: str) -> pathlib.Path:
-    if not isinstance(workspace_path, str) or not workspace_path.strip():
-        raise HTTPException(status_code=400, detail="workspace_path is required")
-
-    p = pathlib.Path(workspace_path).expanduser()
-    if not p.is_absolute():
-        raise HTTPException(status_code=400, detail="workspace_path must be an absolute path")
-
-    # 任意だが、パス注入対策として許可ルート配下に制限できる
-    allowed_root = os.getenv("EXECUTOR_ALLOWED_WORKSPACE_ROOT")
-    if allowed_root:
-        root = pathlib.Path(allowed_root).expanduser().resolve()
-        resolved = p.resolve()
-        try:
-            if not resolved.is_relative_to(root):
-                raise HTTPException(status_code=403, detail="workspace_path is outside allowed root")
-        except AttributeError:
-            # Python < 3.9 互換（本PJは 3.11+ 前提だが念のため）
-            if str(resolved).startswith(str(root)) is False:
-                raise HTTPException(status_code=403, detail="workspace_path is outside allowed root")
-
-    # workspace はSVが用意するが、無ければ作る
-    p.mkdir(parents=True, exist_ok=True)
-    return p
-
-
-@app.get("/healthz")
-async def healthz() -> Dict[str, str]:
-    return {"status": "ok"}
-
-
-@app.post("/execute", response_model=ExecuteResponse)
-async def execute(req: ExecuteRequest) -> ExecuteResponse:
-    workspace_dir = _validate_workspace_path(req.workspace_path)
-
-    task_service = select_task_service()
-    await task_service.prepare(
-        prompt=req.prompt,
-        sources=None,
-        task_id=req.task_id,
-        workspace_path=workspace_dir,
-    )
-
-    if req.trace_id:
-        task_service.get_agent_runner().get_task_status().trace_id = req.trace_id
-
-    task_status = task_service.start(wait=False, timeout=req.timeout)
-    TaskManager.upsert_task(task_status)
-
-    return ExecuteResponse(task_id=task_status.task_id)
-
-
-@app.get("/status/{task_id}")
-async def status(task_id: str, tail: Optional[int] = 200) -> Any:
-    # 既存のTaskStatus(JSON)をそのまま返す（SV側は status/sub_status を見て完了判定する）
-    task = await TaskManager.get_status(task_id, tail=tail)
-    return task.model_dump(mode="json")
-
-
-@app.delete("/cancel/{task_id}")
-async def cancel(task_id: str) -> Dict[str, Any]:
-    res: Any = await TaskManager.cancel_task(task_id)
-    if isinstance(res, dict):
-        return res
-    return {"message": "cancel requested"}
-
+app.get("/healthz", response_model=HealthzResponse)(EndPoint.healthz)
+app.post("/execute", response_model=ExecuteResponse)(EndPoint.execute)
+app.get("/status/{task_id}", response_model=TaskStatus)(EndPoint.status)
+app.delete("/cancel/{task_id}", response_model=CancelResponse)(EndPoint.cancel)
 
 if __name__ == "__main__":
     import argparse

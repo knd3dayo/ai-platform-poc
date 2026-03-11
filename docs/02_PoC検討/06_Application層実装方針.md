@@ -18,23 +18,44 @@
 * **SV型の設計指針：**
 AIエージェントの一般的な用語として「スーパーバイザー」はAIの司令塔を指すが、業務適用においては**「SV型アーキテクチャを採用する場合は、必ず人間が結果を判断・承認するプロセス（非同期HITL）を組み込むべき」**という原則を置く。
 
-
-
 ## 実装方針
+### 全体概要
+* 最終的には
+  * Claude Code、Cline CLI、OpenCodeのようなコーディングエージェントを自律型エージェントとし、サンドボックス内で実行する。  
+    サンドボックスとしてDockerコンテナを使用する。
+  * 自律型エージェント/サンドボックス起動用のAPI/MCPサーバーを用意する。サンドボックス起動用のAPIもDockerで実行可能なようにする。
+  * Super-VisorとなるエージェントはLangGraphを用いて実装する。
+  * Super-Visor実行用のAPIを用意する。これもDockerで実行可能なようにする。
+  * クライアント -> BFF -> Super-Visor API ->  自律型エージェント/サンドボックス起動用のAPI という一連の流れを実現する。
+
+Dockerコンテナの作成、API連携により攻勢が複雑となるため、まずはホスト上で一連の流れを実現する。
+
+* 初期段階では
+  * コーディングエージェントはホスト上にインストールする。
+  * 自律型エージェント/サンドボックス起動用のAPI/MCPサーバーを用意する。コーディングエージェントをホスト上のサブプロセスとして起動する。
+  * Super-VisorとなるエージェントはLangGraphを用いて実装する。
+  * Super-Visor実行用のAPIを用意する。Super-Visor実行用のAPIはホスト上のプロセスとして実行する。
 
 ### 自律型エージェントの実装方針
-* Claude Code、Cline CLI、OpenCodeのようなコーディングエージェントをDockerコンテナ上で実行する。
-  * コーディングエージェントには、ソースコードやログファイル、実行の前提となるデータファイルを格納したワークスペースをホスト側から渡す。
-  * ワークスペースにはAGENT.mdや利用可能なMCPの定義を記述した設定ファイルも格納する。
-  * コアとなるライブラリと、CLI、APIを提供する。
-  * SV型エージェントからの呼び出しは、まずはライブラリを直接利用した実行を試し、問題なく動作したらAPIクライアントを実装する方針。
+#### 初期段階
+* コーディングエージェントには、ソースコードやログファイル、実行の前提となるデータファイルを格納したワークスペースのパスをSV型エージェント側から渡す。
+* ワークスペースにはAGENT.mdや利用可能なMCPの定義を記述した設定ファイルも格納する。
+* コアとなるライブラリと、CLI、APIを提供する。
+* SV型エージェントからの呼び出しは、自律型エージェント用のAPI/MCPサーバー経由で行う。
+* 自律型エージェントの `task_id` は外部から指定可能で、未指定の場合はUUID等で自動採番する。
+* 自律型エージェント用のAPI/MCPサーバーには`execute`、`cancel`、`status`のエンドポイント/MCPツールを準備する。
+* 自律型エージェント用のAPI/MCPサーバーにはHTTPヘッダ`Authorization`,`trace_id`を受け取り、バックエンドの処理やトレース処理に使用可能にする。
+
+
+#### 最終段階
+* コンテナによるサンドボックス化
 * Egress 制御（firewall + Squid Proxy）
    * 方針「LiteLLM Proxy を経由しない不正な LLM 通信のネットワーク遮断（Egress制御）」を実行時ゲートとして担保。
    * 実行コンテナ側: `all-in-on-image` の `init-firewall.sh` で `iptables -P OUTPUT DROP` を既定にし、`127.0.0.0/8` と「コンテナ所属の Docker サブネット」宛のみ許可する（サブネットはデフォルトルートのIFから自動検出）。
    * Proxy 経路: 外向き HTTP(S) が必要な処理は、`HTTP_PROXY` / `HTTPS_PROXY` を `http://squid:3128` に設定して Squid を経由させる
    * Proxy サービス: Squid は `infra/00-network/`（`docker-compose.yml` / `squid.conf`）で提供し、到達先や許可ポートは Squid 側の設定で調整する。
-* 自律型エージェントの `task_id` は外部から指定可能で、未指定の場合はUUID等で自動採番する。
 
+#### 最終段階の実装(初期段階の検証後)
 * サンプル実装の方針
    * Dockerコンテナのサンプル実装を[all-in-on-image](../../app/docker/autonomous-agent-executor/images/all-in-on-image)に作成する。
    * Dockerコンテナの操作をPythonから行うサンプル実装を[ai_platform_samplelib/application/autonomous](../../app/ai-platform-samplelib/src/ai_platform_samplelib/application/autonomous)に作成する。
@@ -68,19 +89,15 @@ AIエージェントの一般的な用語として「スーパーバイザー」
    * 現状: `create_opencode_json.py` は LLM 接続設定（provider/model/baseURL）中心で、`config/common/opencode.jsonc` の MCP 定義は固定値になっている。
    * 影響: “実行時に注入された認証情報で MCP を呼ぶ”ユースケースが、今の default 設定では成立しにくい。
 
-6. 生成物（`src-updated`）内に環境ファイルが混在し、設定キーも揺れている
-   * 方針/期待: 実行時に参照される env キー（例: `COMPOSE_DIRECTORY`）が一貫していること。
-   * 現状: `test/application/autonomous/src-updated/` に過去の `.env_*` が残っており、`COMPOSE_PROJECT_DIRECTORY` のように実装が参照しないキーも含まれる。
-   * 影響: 人手運用時に誤って参照/コピーされやすく、トラブルシュートが難しくなる。
-
-7. ウォームプール/Speculative Boot 等の性能方針は未実装（PoC段階）
+6. ウォームプール/Speculative Boot 等の性能方針は未実装（PoC段階）
    * 方針/期待: コールドスタート遅延を隠蔽するための投機起動・ウォームプール。
    * 現状: タスクごとに workspace を切り、コンテナ起動・監視・終了後 remove までの基本線はあるが、ウォームプール等は未実装。
    * 影響: コールドスタート時間がそのままユーザー体験に跳ねる。将来拡張の設計余地を残す必要がある。
 
+
 ### SV型エージェントの実装方針
-* SV型エージェントはLangGraphで実装し、コーディングエージェントのコンテナをPython経由で起動し、
-指示とタスクIDを渡す。なおタスクIDはワークスペースのパスの一部にもなる。
+#### 初期段階
+* SV型エージェントはLangGraphで実装し、コーディングエージェントをAPI/MCPサーバー経由で起動し、指示とタスクIDを渡す。なおタスクIDはワークスペースのパスの一部にもなる。
 * SV型エージェントは実行全体で一意の `trace_id` を採番し、自律型エージェント実行結果の `TaskStatus.trace_id` として伝播する。
    * 実装メモ:
       * SV→自律の呼び出し引数として `trace_id` を渡し、自律側の `TaskStatus.trace_id` に保存する（相関ID）。
@@ -92,7 +109,10 @@ AIエージェントの一般的な用語として「スーパーバイザー」
 * 自律型エージェントの処理状況は`TaskStatus`として逐次受け取り、それをユーザーまたは非同期連携基盤へと通知する。
 * 自律型エージェントの結果には「もっと情報が必要」「この後どうしますか？」といった、ユーザーによる判断が必要となる回答もある。
 その場合に、ユーザーからの入力を待つ機能(Human in the loop)を実装する必要がある。
+* 重要
+  * SV型エージェントと自律型エージェントの情報共有、進捗管理のためのファイルをワークスペース上に配置して、各々がそれを参照したうえで処理を進めること。
 
+#### 最終段階の実装(初期段階の後)
 * サンプル実装の方針
    * 自律型エージェントの処理はPythonから行うサンプル実装[ai_platform_samplelib/application/autonomous](../../app/ai-platform-samplelib/src/ai_platform_samplelib/application/autonomous)を使用することで実現する。
    * SV型エージェントのサンプル実装は[ai_platform_samplelib/application/super_visor](../../app/ai-platform-samplelib/src/ai_platform_samplelib/application/super_visor/)に作成する。
@@ -100,21 +120,7 @@ AIエージェントの一般的な用語として「スーパーバイザー」
    * コマンドライン起動用のテストクライアント(シェルスクリプト)を[test/application/super-visor](../../test/application/super-visor)に配置する。
    * CLIは `run` / `resume` を提供する。`-y/--yes` 指定時は承認をスキップし、未指定時はサブタスク単位で承認/停止（セッション保存）を行う。
 
-* 重要
-  * SV型エージェントで設定したLLM_MODELなどの環境変数が自律型エージェントに確実に渡されること。
-  * SV型エージェントと自律型エージェントの情報共有、進捗管理のためのファイルをワークスペース上に配置して、各々がそれを参照したうえで処理を進めること。
 
-#### PoCにおける実行形態（ワンセットDoOD）
-* PoC段階では、SV型エージェントと自律型エージェント（Executor API/ランナー）をワンセットでコンテナ化し、DoOD（docker.sock）で実行コンテナ（all-in-on-image）を起動する方式を採用する。
-   * 目的: ホスト実行/SV分離などの本番設計を先送りしつつ、閉域ネットワーク（`ai_platform_internal`）内での実行・疎通を最短で成立させる。
-   * 注意: docker.sock をマウントする方式はホストDocker操作権限を強く委譲する（PoCとして受容し、ガードレールで被害面を絞る）。
-* 共有workspaceはホスト上の固定ルート配下に作成し、SVと自律と実行コンテナが同じディレクトリを参照する。
-   * PoC固定: workspace ルートは `/srv/ai_platform/workspaces` とし、ホストとバンドルコンテナで同一絶対パスにミラーリング（bind mount）する。
-   * `workspace_path` は上記ルート配下のホスト絶対パスを使用し、ZIP upload/download は用いない。
-   * ルートの環境変数による変更は今後の検討課題とする（変更する場合も同一絶対パスのミラーリングが前提）。
-* ガードレール（PoC最低限）
-   * Executor API では `EXECUTOR_ALLOWED_WORKSPACE_ROOT=/srv/ai_platform/workspaces` を設定し、許可ルート外の `workspace_path` を拒否する。
-  
 #### 現状との乖離（暫定・SV型エージェント）
 3. `TaskStatus` の逐次通知は既定では外部通知されない（`SV_EVENT_BUS_TYPE` 未設定時）
    * 方針/期待: 自律型エージェントの処理状況を `TaskStatus` として逐次受け取り、ユーザーまたは非同期連携基盤へ通知する。
@@ -149,3 +155,13 @@ AIエージェントの一般的な用語として「スーパーバイザー」
    * 現状: SV→Executor のツール引数は `prompt`/`zip`/`initial_files`/`timeout` が中心で、Bearer等を受け取って workspace 設定（MCP定義）へ反映する処理が見当たらない。
    * 影響: “実行時に注入された認証情報で MCP を呼ぶ”ユースケースが、現状のSV経路では成立しにくい。
 
+## その他 最終段階にいたるまでの実行携帯検討（ワンセットDoOD）
+* PoC段階では、SV型エージェントと自律型エージェント（Executor API/ランナー）をワンセットでコンテナ化し、DoOD（docker.sock）で実行コンテナ（all-in-on-image）を起動する方式を採用する。
+   * 目的: ホスト実行/SV分離などの本番設計を先送りしつつ、閉域ネットワーク（`ai_platform_internal`）内での実行・疎通を最短で成立させる。
+   * 注意: docker.sock をマウントする方式はホストDocker操作権限を強く委譲する（PoCとして受容し、ガードレールで被害面を絞る）。
+* 共有workspaceはホスト上の固定ルート配下に作成し、SVと自律と実行コンテナが同じディレクトリを参照する。
+   * PoC固定: workspace ルートは `/srv/ai_platform/workspaces` とし、ホストとバンドルコンテナで同一絶対パスにミラーリング（bind mount）する。
+   * `workspace_path` は上記ルート配下のホスト絶対パスを使用し、ZIP upload/download は用いない。
+   * ルートの環境変数による変更は今後の検討課題とする（変更する場合も同一絶対パスのミラーリングが前提）。
+* ガードレール（PoC最低限）
+   * Executor API では `EXECUTOR_ALLOWED_WORKSPACE_ROOT=/srv/ai_platform/workspaces` を設定し、許可ルート外の `workspace_path` を拒否する。
