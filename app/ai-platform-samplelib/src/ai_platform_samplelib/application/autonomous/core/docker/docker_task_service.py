@@ -5,28 +5,27 @@ import os
 from pathlib import Path
 from typing import Optional, AsyncGenerator, Generator
 import signal
-
-
 from python_on_whales import docker as whales, Container
 
+# 内部パッケージのインポート
+from ..abstract_agent_runner import AbstractAgentRunner
+from ..abstract_task_service import AbstractTaskService
+from .docker_coding_agent_runner import CodingAgentRunner
+from ai_platform_samplelib.application.autonomous.model.models import TaskStatus
 
 from ai_platform_samplelib.util.logging import get_application_logger
 
 logger = get_application_logger()
 
-# 内部パッケージのインポート
-from .docker_coding_agent_runner import CodingAgentRunner
-from ..model.models import TaskStatus
-from .abstract_actions import AbstractActions
 
 # --- Logic Layer: Typerに依存しないサービス ---
-class TaskService:
+class DockerTaskService(AbstractTaskService):
 
     def __init__(self):
         self.runner: Optional[CodingAgentRunner] = None
         self.container: Optional[Container] = None
 
-    def _spawn_detached_monitor(self, task_id: str, timeout: int) -> None:
+    def spawn_detached_monitor(self, task_id: str, timeout: int) -> None:
         """wait=False の場合でも tasks_db.json が自動更新されるよう、別プロセスで monitor を起動する。"""
         if os.getenv("AI_PLATFORM_DISABLE_DETACH_MONITOR") == "1":
             return
@@ -56,6 +55,60 @@ class TaskService:
             start_new_session=True,
             close_fds=True,
         )
+
+    def cancel_task(self, task: TaskStatus) -> None:
+        if task.status != "running" or not task.container_id:
+            return
+        whales.container.kill(task.container_id)
+
+    async def prepare(
+        self,
+        prompt: str,
+        sources: Optional[list[Path]],
+        task_id: Optional[str],
+        workspace_path: Optional[Path] = None,
+    ) -> None:
+        params = {
+            "prompt": prompt,
+            "task_id": task_id,
+        }
+        if sources:
+            params["source_paths"] = sources
+
+        if workspace_path is not None:
+            params["workspace_path"] = workspace_path
+
+        self.runner = await CodingAgentRunner.create_runner(**params)
+
+    def start(self, *, wait: bool, timeout: int) -> TaskStatus:
+        if self.runner is None:
+            raise RuntimeError("Runner not initialized")
+
+        self.container = self.runner.start()
+
+        task_status = self.runner.get_task_status()
+        # container_id が無いと logs/状態取得ができず、running のまま固まるため必ず保存する
+        task_status.container_id = getattr(self.container, "id", None)
+
+        if wait:
+            task_status.starting_foregrond()
+        else:
+            task_status.starting_background()
+
+        return task_status
+        
+    def get_agent_runner(self) -> AbstractAgentRunner:
+        """コーディングエージェントのランナーを返す。"""
+        if not self.runner:
+            raise RuntimeError("Runner not initialized")
+        return self.runner
+
+    
+    async def monitor(self, timeout: int) -> AsyncGenerator[TaskStatus, None]:
+        if not self.container or not self.runner:
+            return
+        async for status in DockerTaskService.monitor_container(self.container, self.runner, timeout):
+            yield status
 
     @classmethod
     def print_confg(cls, container: Container) -> None:
@@ -91,15 +144,9 @@ class TaskService:
         except Exception:
             # デバッグログの失敗で本処理を落とさない
             pass
-    
-    async def monitor(self, timeout: int) -> AsyncGenerator[TaskStatus, None]:
-        if not self.container or not self.runner:
-            return
-        async for status in TaskService.monitor_container(self.container, self.runner, timeout):
-            yield status
 
     @classmethod
-    async def monitor_container(cls, container: Container, runner: CodingAgentRunner, timeout: int) -> AsyncGenerator[TaskStatus, None]:
+    async def monitor_container(cls, container: Container, runner: AbstractAgentRunner, timeout: int) -> AsyncGenerator[TaskStatus, None]:
         # debug用: container設定/引数は秘匿情報(ENV)を含みうるため、デフォルトでは出さない。
         if os.getenv("AI_PLATFORM_DEBUG_CONTAINER") == "1":
             cls.print_confg(container)
@@ -117,7 +164,7 @@ class TaskService:
                 
                 if (loop.time() - start_time) > timeout:
                     container.kill()
-                    task  = runner.task_status
+                    task  = runner.get_task_status()
                     if task:
                         task.timeouted(timeout)
                     if task:
@@ -131,8 +178,8 @@ class TaskService:
             # ログ取得 (whales では直接 logs() が呼べ、文字列で返ります)
             out_logs = container.logs()
             
-            artifacts = [str(f.relative_to(runner.workspace)) for f in runner.workspace.glob("**/*") if f.is_file()]
-            task  = runner.task_status
+            artifacts = [str(f.relative_to(runner.get_workspace_path())) for f in runner.get_workspace_path().glob("**/*") if f.is_file()]
+            task  = runner.get_task_status()
             if task:
                 if exit_code == 0:
                     task.completed()
@@ -143,7 +190,7 @@ class TaskService:
                 yield task
  
         except Exception as e:
-            task  = runner.task_status
+            task  = runner.get_task_status()
             if task:
                 task.failed()
                 task.stderr = f"Monitor Error: {str(e)}"
@@ -161,104 +208,5 @@ class TaskService:
             c.remove(force=True)
             yield f"Removed container {c.id[:12]}"
 
-    def cancel_task(self, task: TaskStatus) -> None:
-        if task.status != "running" or not task.container_id:
-            return
-        whales.container.kill(task.container_id)
-
-    def get_runner_status(self) -> TaskStatus:
-        if self.runner:
-            return self.runner.task_status
-        raise RuntimeError("Runner not initialized")
-
-    async def prepare(self,
-        prompt: str,
-        sources: Optional[list[Path]],
-        task_id: Optional[str] ,
-    ):
-        params = {
-            "prompt": prompt,
-            "task_id": task_id,
-        }
-        if sources:
-            params["source_paths"] = sources
-
-        self.runner = await CodingAgentRunner.create_runner(**params)
-        self.container = self.runner.run()
-        # container_id が無いと logs/状態取得ができず、running のまま固まるため必ず保存する
-        self.runner.task_status.container_id = getattr(self.container, "id", None)
-
-    @classmethod
-    async def run(
-        cls,
-        actions: AbstractActions,
-        prompt: str,
-        sources: Optional[list[Path]] = None,
-        task_id: Optional[str] = None,
-        timeout: int = 300,
-        wait: bool = True,
-    ) -> None:
-        """CLI/呼び出し層向け: Runner作成〜実行までをまとめる。"""
-        # 循環import回避のため遅延import
-        from .task_manager import TaskManager
-
-        # CLI はコマンドごとに別プロセスで起動されるため、永続ストアから都度復元する。
-        TaskManager.load_tasks()
-
-        normalized_sources: Optional[list[Path]] = None
-        if sources:
-            normalized_sources = [Path(p) for p in sources]
-
-        runner = await CodingAgentRunner.create_runner(
-            prompt=prompt,
-            task_id=task_id,
-            source_paths=normalized_sources,
-        )
-
-        async for status in cls.run_task(runner, timeout=timeout, wait=wait):
-            if status.sub_status in ("starting", "running-foreground"):
-                actions.after_start_task_action(status.task_id)
-            elif status.sub_status == "running-background":
-                actions.after_start_detach_task_action(status.task_id)
-                return
-            elif status.sub_status == "completed":
-                actions.after_complete_action(runner)
-                return
-
-            await actions.progress_action(status.task_id)
-
-    @classmethod
-    async def run_task(
-        cls,
-        runner: CodingAgentRunner,
-        timeout: int = 300,
-        wait: bool = True,
-    ) -> AsyncGenerator[TaskStatus, None]:
-        """Runnerを実行し TaskStatus を逐次返す（wait=False は起動だけして終了）。"""
-        # 循環import回避のため遅延import
-        from .task_manager import TaskManager
-
-        container = runner.run()
-        runner.task_status.container_id = getattr(container, "id", None)
-
-        task_status = runner.task_status
-        if wait:
-            task_status.starting_foregrond()
-        else:
-            task_status.starting_background()
-        TaskManager.upsert_task(task_status)
-
-        if not wait:
-            # 呼び出し側が最初の yield で抜けても monitor を確実に起動する
-            cls()._spawn_detached_monitor(task_status.task_id, timeout)
-            yield task_status
-            return
-
-        # wait=True の場合は、開始状態を返した後にコンテナ終了を待って最終状態を返す
-        yield task_status
-        async for final_status in cls.monitor_container(container, runner, timeout):
-            if final_status:
-                TaskManager.upsert_task(final_status)
-                yield final_status
 
 

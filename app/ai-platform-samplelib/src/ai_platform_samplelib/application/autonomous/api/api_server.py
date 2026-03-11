@@ -2,27 +2,17 @@ from __future__ import annotations
 
 import os
 import pathlib
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException
 
-from ..core.docker_coding_agent_runner import CodingAgentRunner as DockerCodingAgentRunner
-from ..core.subprocess_coding_agent_runner import SubprocessCodingAgentRunner
+from ..core.task_service_factory import select_task_service
 from ..core.task_manager import TaskManager
 
 from .models import ExecuteRequest, ExecuteResponse
 
 
 app = FastAPI(title="Autonomous Agent Executor API", version="0.1")
-
-
-def _select_runner_class() -> Type[Any]:
-    backend = (os.getenv("AI_PLATFORM_TASK_BACKEND") or "docker").strip().lower()
-    if backend in ("docker", "compose"):
-        return DockerCodingAgentRunner
-    if backend in ("subprocess", "process"):
-        return SubprocessCodingAgentRunner
-    raise HTTPException(status_code=400, detail=f"Unknown AI_PLATFORM_TASK_BACKEND: {backend}")
 
 
 def _validate_workspace_path(workspace_path: str) -> pathlib.Path:
@@ -60,23 +50,21 @@ async def healthz() -> Dict[str, str]:
 async def execute(req: ExecuteRequest) -> ExecuteResponse:
     workspace_dir = _validate_workspace_path(req.workspace_path)
 
-    # task_id は外部から指定可（未指定ならcreate_runner内で採番）
-    Runner = _select_runner_class()
-    runner = await Runner.create_runner(
+    task_service = select_task_service()
+    await task_service.prepare(
         prompt=req.prompt,
+        sources=None,
         task_id=req.task_id,
-        detach=True,
         workspace_path=workspace_dir,
     )
+
     if req.trace_id:
-        runner.task_status.trace_id = req.trace_id
+        task_service.get_agent_runner().get_task_status().trace_id = req.trace_id
 
-    run_result = runner.run()
-    runner.task_status.container_id = getattr(run_result, "id", None)
-    runner.task_status.starting_background()
-    TaskManager.upsert_task(runner.task_status)
+    task_status = task_service.start(wait=False, timeout=req.timeout)
+    TaskManager.upsert_task(task_status)
 
-    return ExecuteResponse(task_id=runner.task_id)
+    return ExecuteResponse(task_id=task_status.task_id)
 
 
 @app.get("/status/{task_id}")

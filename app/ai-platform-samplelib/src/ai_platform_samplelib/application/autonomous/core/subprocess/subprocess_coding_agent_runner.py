@@ -8,8 +8,10 @@ import uuid
 from dataclasses import dataclass
 from typing import Optional, Union
 
-from ..model.models import CodingAgentConfig, TaskStatus
-from .utils import ExecutorUtil
+from ..abstract_agent_runner import AbstractAgentRunner
+
+from ai_platform_samplelib.application.autonomous.model.models import TaskStatus, CodingAgentConfig
+from ..utils import ExecutorUtil
 
 
 @dataclass
@@ -17,7 +19,7 @@ class SubprocessRunResult:
     pid: int
 
 
-class SubprocessCodingAgentRunner:
+class SubprocessCodingAgentRunner(AbstractAgentRunner):
     """Runner that executes the agent locally via Python subprocess.
 
     It prepares a workspace (same semantics as Docker runner), then starts a
@@ -68,6 +70,12 @@ class SubprocessCodingAgentRunner:
         if source_paths:
             ExecutorUtil.add_files(source_paths, self.workspace)
 
+    def get_task_status(self) -> TaskStatus:
+        return self.task_status
+
+    def get_workspace_path(self) -> pathlib.Path:
+        return self.workspace.resolve()
+
     @classmethod
     async def create_runner(
         cls,
@@ -85,12 +93,12 @@ class SubprocessCodingAgentRunner:
         runner.prepare_workspace(source_paths=source_paths)
         return runner
 
-    def run(self) -> SubprocessRunResult:
+    def start(self) -> SubprocessRunResult:
         # Spawn entrypoint wrapper which will run the actual agent command.
         entrypoint_cmd = [
             sys.executable,
             "-m",
-            "ai_platform_samplelib.application.autonomous.core.subprocess_entrypoint",
+            "ai_platform_samplelib.application.autonomous.core.subprocess.subprocess_entrypoint",
             "--workspace",
             self.workspace.as_posix(),
             "--exit-code-file",

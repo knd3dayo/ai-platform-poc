@@ -1,13 +1,8 @@
-from typing import Callable, Generator
-from pathlib import Path
-
+from typing import Generator, Any
 from abc import ABC, abstractmethod
 
-from pathlib import Path
-
 # 内部パッケージのインポート
-from .docker_coding_agent_runner import CodingAgentRunner
-from ..model.models import TaskStatus, ComposeConfig
+from ..model.models import TaskStatus
 
 class AbstractActions(ABC):
     @abstractmethod
@@ -24,7 +19,7 @@ class AbstractActions(ABC):
 
     @abstractmethod
     def after_complete_action(
-            self, runner: CodingAgentRunner) -> None:
+            self, runner: Any) -> None:
         pass
     @abstractmethod
     def after_task_not_found_action(self) -> None:

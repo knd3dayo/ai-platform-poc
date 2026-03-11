@@ -12,7 +12,7 @@ from langgraph.graph import MessagesState
 from langchain_core.tools import tool
 
 from ..core.utils import LLMUtils
-from ai_platform_samplelib.application.autonomous.core.task_service import CodingAgentRunner, TaskService
+from ai_platform_samplelib.application.autonomous.core.task_service_factory import select_task_service
 from ai_platform_samplelib.application.autonomous.core.task_manager import TaskManager
 
 # ==========================================
@@ -123,23 +123,26 @@ async def _run_executor_local_impl(
             # resolve/exists できない環境でも従来挙動にフォールバック
             workspace_path = None
 
-    runner = await CodingAgentRunner.create_runner(
+    task_service = select_task_service()
+    await task_service.prepare(
         prompt=prompt,
-        source_paths=source_paths_for_runner,
+        sources=source_paths_for_runner,
         task_id=task_id,
-        detach=True,
-        workspace_path=str(workspace_path) if workspace_path else None,
+        workspace_path=workspace_path,
     )
 
     if trace_id:
-        runner.task_status.trace_id = trace_id
-    container = runner.run()
-    runner.task_status.container_id = getattr(container, "id", None)
-    runner.task_status.starting_foregrond()
-    TaskManager.upsert_task(runner.task_status)
+        task_service.get_agent_runner().get_task_status().trace_id = trace_id
 
-    # 終了時のステータス確定/成果物同期のため監視をバックグラウンドで回す
-    asyncio.create_task(TaskService.monitor_container(container, runner, timeout))
+    # ローカル実行は foreground 扱いで開始し、monitor はバックグラウンドで状態収束させる
+    started = task_service.start(wait=True, timeout=timeout)
+    TaskManager.upsert_task(started)
+
+    async def _consume_monitor() -> None:
+        async for st in task_service.monitor(timeout):
+            TaskManager.upsert_task(st)
+
+    asyncio.create_task(_consume_monitor())
 
     last_stdout: str = ""
     last_printed_lines: list[str] = []

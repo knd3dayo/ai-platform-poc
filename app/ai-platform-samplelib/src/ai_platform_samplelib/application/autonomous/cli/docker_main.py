@@ -6,11 +6,12 @@ import time
 
 # 内部パッケージのインポート
 from ..core.task_manager import TaskManager
-from ..core.docker_task_service import TaskService
+from ..core.docker.docker_task_service import DockerTaskService
 from .typer_actions import TyperActions
 
 # --- CLI Layer: コマンドの定義 ---
 actions = TyperActions()
+docker_task_service = DockerTaskService()
 
 app = typer.Typer(help="Autonomous Agent Executor CLI Tool")
 
@@ -36,7 +37,8 @@ def run(
                 raise typer.BadParameter(f"ファイル/ディレクトリではありません: {src}", param_hint="--src/-s")
 
     async def main():
-        await TaskService.run(
+        await TaskManager.run_task(
+            task_service=docker_task_service,
             actions=actions,
             prompt=prompt,
             sources=sources,
@@ -101,7 +103,7 @@ def cancel(task_id: str):
 @app.command()
 def prune(compose_service_name: str):
     """掃除実行"""
-    actions.prune_progress_action(TaskService.prune_containers(compose_service_name))
+    actions.prune_progress_action(docker_task_service.prune_containers(compose_service_name))
 
 if __name__ == "__main__":
     app()

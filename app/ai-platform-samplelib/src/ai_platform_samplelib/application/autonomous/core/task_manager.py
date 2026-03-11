@@ -12,10 +12,10 @@ from pathlib import Path
 from fastapi import HTTPException
 from python_on_whales import docker as whales
 from ..model.models import TaskStatus
-from ..core.abstract_actions import AbstractActions
 
-if TYPE_CHECKING:
-    from .docker_task_service import TaskService
+from ..core.abstract_actions import AbstractActions
+from ..core.abstract_task_service import AbstractTaskService
+
 # --- 設定：環境に合わせて調整 ---
 HOST_PROJECTS_ROOT = os.getenv("HOST_PROJECTS_ROOT", "/home/user/ai-platform/data/projects")
 TASKS_FILE = pathlib.Path(HOST_PROJECTS_ROOT) / "tasks_db.json"
@@ -332,7 +332,7 @@ class TaskManager:
     @classmethod
     async def run_task(
         cls,
-        task_service: "TaskService",
+        task_service: AbstractTaskService,
         actions: AbstractActions,
         prompt: str,
         sources: Optional[list[Path]],
@@ -344,21 +344,22 @@ class TaskManager:
         await task_service.prepare(prompt, sources, task_id)
 
         async for status in cls._run_(task_service, timeout, wait):
-            if status.sub_status == "starting":
+            if status.sub_status in ("running-foreground", "starting"):
                 actions.after_start_task_action(status.task_id)
             elif status.sub_status == "running-background":
                 actions.after_start_detach_task_action(status.task_id)
-                break  # バックグラウンドで走らせる場合はここでループを抜ける
+                break
             elif status.sub_status == "completed":
-                if task_service.runner is not None:
-                    actions.after_complete_action(task_service.runner)
-                break  # 完了したらループを抜ける
+                actions.after_complete_action(task_service.get_agent_runner())
+                break
+            elif status.sub_status in ("failed", "timeout", "cancelled"):
+                break
 
             await actions.progress_action(status.task_id)
 
 
     @classmethod
-    async def _monitor_wrapper(cls, task_service: TaskService, timeout: int):
+    async def _monitor_wrapper(cls, task_service: AbstractTaskService, timeout: int):
         """Wrapper to consume the async generator from monitor"""
         async for task in task_service.monitor(timeout):
             cls.upsert_task(task)
@@ -366,26 +367,22 @@ class TaskManager:
     @classmethod
     async def _run_(
         cls,
-        task_service: "TaskService",
+        task_service: AbstractTaskService,
         timeout: int,
         wait: bool,
     ) -> AsyncGenerator[TaskStatus, None]:
         """タスクの開始、監視、完了後の同期までを一括管理"""
-        if wait:
-            task_status = task_service.get_runner_status()
-            task_status.starting_foregrond()
-            cls.upsert_task(task_status)
-            # wait=True の CLI 実行では monitor_container を同一イベントループ内で走らせて完了検知する
-            asyncio.create_task(cls._monitor_wrapper(task_service, timeout))
-            yield task_status
-        else:
-            task_status = task_service.get_runner_status()
-            task_status.starting_background()
-            cls.upsert_task(task_status)
-            # 呼び出し側が 1 回目の yield で break しても確実に起動するよう、yield 前に monitor を起動する
-            task_service._spawn_detached_monitor(task_status.task_id, timeout)
+        task_status = task_service.start(wait=wait, timeout=timeout)
+        cls.upsert_task(task_status)
+
+        if not wait:
+            task_service.spawn_detached_monitor(task_status.task_id, timeout)
             yield task_status
             return
+
+        # wait=True: monitor はバックグラウンドで最終状態へ収束させる
+        asyncio.create_task(cls._monitor_wrapper(task_service, timeout))
+        yield task_status
 
         async for status in cls.progress_action(task_status.task_id):
             yield status

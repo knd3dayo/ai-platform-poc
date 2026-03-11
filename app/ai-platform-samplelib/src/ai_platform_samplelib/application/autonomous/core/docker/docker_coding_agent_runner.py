@@ -1,18 +1,23 @@
+from __future__ import annotations
+
 from typing import Optional, cast, Union
 import uuid
 import pathlib
+from pathlib import Path
 import shlex
 import os
 from fastapi import UploadFile
 from python_on_whales import docker as whales, Container, DockerClient
-from ..model.models import ComposeConfig, CodingAgentConfig, TaskStatus
-from .utils import ExecutorUtil
+from ai_platform_samplelib.application.autonomous.model.models import ComposeConfig, CodingAgentConfig, TaskStatus
+from ..abstract_agent_runner import AbstractAgentRunner
+
+from ..utils import ExecutorUtil
 
 from ai_platform_samplelib.util.logging import get_application_logger
 
 logger = get_application_logger()
 
-class CodingAgentRunner:
+class CodingAgentRunner(AbstractAgentRunner):
     """
     コーディングエージェント用のdocker-compose.yml から設定を動的に読み取り、コンテナを実行するクラス
     
@@ -35,14 +40,23 @@ class CodingAgentRunner:
         else:
             self.workspace = pathlib.Path(self.coding_agent_config.workspace_root) / self.task_id
         self.workspace.mkdir(parents=True, exist_ok=True)
-        self.command = shlex.split(self.compose_config.compose_command)
-        self.detach = True  # デフォルトはバックグラウンド実行
-        self.container = None
-        self.task_status = TaskStatus.create(task_id=self.task_id)
 
+        self.task_status = TaskStatus.create(task_id=self.task_id)
         # 共有workspaceを使う場合に、後段（/status や artifacts算出）で参照できるよう保存しておく
         self.task_status.metadata["workspace_path"] = self.workspace.resolve().as_posix()
 
+        self.command = shlex.split(self.compose_config.compose_command)
+        self.detach = True  # デフォルトはバックグラウンド実行
+        self.container = None
+
+
+    def get_task_status(self) -> TaskStatus:
+        """現在の TaskStatus を返す。"""
+        return self.task_status
+
+    def get_workspace_path(self) -> Path:
+        """ワークスペースのパスを返す。"""
+        return self.workspace.resolve()
 
     def prepare_workspace(self, 
                           data: Optional[dict[str, str]] = None, 
@@ -58,7 +72,7 @@ class CodingAgentRunner:
         if source_paths:
             ExecutorUtil.add_files(source_paths, self.workspace)
                     
-    def run(self) -> Container:
+    def start(self) -> Container:
         """
         コンテナを起動し、task_id を返します。
         volumes: [(ホストパス, コンテナパス, モード), ...] のリスト
@@ -127,15 +141,18 @@ class CodingAgentRunner:
         )
 
         # コンテナを起動（Container オブジェクトが返る）
-        container = self.docker.compose.run(**params)
+        self.container = self.docker.compose.run(**params)
 
-        if not container or isinstance(container, str):
+        if not self.container or isinstance(self.container, str):
             raise RuntimeError("Failed to start container as an object")
 
-        self.container =  cast(Container, container) # 明示的に Container 型にキャスト
-        logger.info(f"Started container {self.container.name} for task {self.task_id} with command: {params['command']}")
+        self.container = cast(Container, self.container)  # 明示的に Container 型にキャスト
+        logger.info(
+            f"Started container {self.container.name} for task {self.task_id} with command: {params['command']}"
+        )
 
         return self.container
+
 
     @classmethod
     async def create_runner(
