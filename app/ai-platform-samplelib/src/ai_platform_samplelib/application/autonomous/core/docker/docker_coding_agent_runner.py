@@ -30,6 +30,7 @@ class CodingAgentRunner(AbstractAgentRunner):
         coding_agent_config: CodingAgentConfig,
         task_id: Optional[str] = None,
         workspace_path: Optional[Union[str, pathlib.Path]] = None,
+        extra_env: Optional[dict[str, str]] = None,
     ):
 
         self.compose_config = compose_config
@@ -48,6 +49,10 @@ class CodingAgentRunner(AbstractAgentRunner):
         self.command = shlex.split(self.compose_config.compose_command)
         self.detach = True  # デフォルトはバックグラウンド実行
         self.container = None
+
+        self.extra_env: dict[str, str] = {
+            str(k): str(v) for k, v in (extra_env or {}).items() if v is not None
+        }
 
 
     def get_task_status(self) -> TaskStatus:
@@ -97,6 +102,11 @@ class CodingAgentRunner(AbstractAgentRunner):
             "USER_ID": str(uid),
             "GROUP_ID": str(gid),
         }
+
+        # Per-task environment variables (e.g., Authorization) for downstream tools.
+        for k, v in self.extra_env.items():
+            if v:
+                params["envs"][str(k)] = str(v)
 
         # LLM 設定をホスト環境から引き継ぐ。
         # compose 側で env_file が指定されていても、ここで渡す env が優先されるため
@@ -164,6 +174,7 @@ class CodingAgentRunner(AbstractAgentRunner):
         task_id: Optional[str] = None,
         detach: bool = True,
         workspace_path: Optional[Union[str, pathlib.Path]] = None,
+        extra_env: Optional[dict[str, str]] = None,
     ) -> "CodingAgentRunner":
         """
         インスタンス生成からコンテナ起動までを一括で行うエントリーポイント
@@ -176,6 +187,7 @@ class CodingAgentRunner(AbstractAgentRunner):
             compose_config=compose_config,
             coding_agent_config=coding_agent_config,
             workspace_path=workspace_path,
+            extra_env=extra_env,
         )
 
         runner.detach = detach

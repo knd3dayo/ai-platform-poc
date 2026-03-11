@@ -30,12 +30,15 @@ class SubprocessTaskService(AbstractTaskService):
         sources: Optional[list[Path]],
         task_id: Optional[str],
         workspace_path: Optional[Path] = None,
+        extra_env: Optional[dict[str, str]] = None,
     ) -> None:
         params: dict[str, object] = {"prompt": prompt, "task_id": task_id}
         if sources:
             params["source_paths"] = sources
         if workspace_path is not None:
             params["workspace_path"] = workspace_path
+        if extra_env:
+            params["extra_env"] = extra_env
 
         self.runner = await SubprocessCodingAgentRunner.create_runner(**params)  # type: ignore[arg-type]
 

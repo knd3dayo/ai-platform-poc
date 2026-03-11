@@ -2,7 +2,7 @@ import os
 import pathlib
 from typing import Any, Dict, Optional, Annotated
 
-from fastapi import Body, HTTPException, Path, Query
+from fastapi import Body, HTTPException, Path, Query, Header
 
 from ..core.task_service_factory import select_task_service
 from ..core.task_manager import TaskManager
@@ -14,6 +14,8 @@ from ..model.models import (
     HealthzResponse,
     TaskStatus,
 )
+
+from ...common.request_headers import RequestHeaders, get_current_request_headers
 
 class EndPoint:
 
@@ -54,7 +56,9 @@ class EndPoint:
 
     @staticmethod
     async def execute(
-        req: Annotated[ExecuteRequest, Body(description="タスク実行リクエスト")]
+        req: Annotated[ExecuteRequest, Body(description="タスク実行リクエスト")],
+        authorization: Annotated[Optional[str], Header(default=None)] = None,
+        x_trace_id: Annotated[Optional[str], Header(default=None, alias="x-trace-id")] = None,
     ) -> ExecuteResponse:
         """
         タスク実行用エンドポイント。SVはこれを叩いてエージェントにタスク実行を指示する。
@@ -62,12 +66,23 @@ class EndPoint:
         
         workspace_dir = EndPoint.validate_workspace_path(req.workspace_path)
 
+        # Prefer explicit HTTP headers when present; otherwise fallback to MCP captured headers.
+        incoming: Optional[RequestHeaders] = None
+        if authorization or x_trace_id:
+            incoming = RequestHeaders.from_values(authorization=authorization, trace_id=x_trace_id)
+        else:
+            incoming = get_current_request_headers()
+
+        if incoming and incoming.trace_id and not req.trace_id:
+            req.trace_id = incoming.trace_id
+
         task_service = select_task_service()
         await task_service.prepare(
             prompt=req.prompt,
             sources=None,
             task_id=req.task_id,
             workspace_path=workspace_dir,
+            extra_env=(incoming.to_env() if incoming else None),
         )
 
         if req.trace_id:

@@ -341,7 +341,7 @@ class TaskManager:
         wait: bool = True,
     ) -> None:
         """新しいタスクを実行します。"""
-        await task_service.prepare(prompt, sources, task_id)
+        await task_service.prepare(prompt, sources, task_id, extra_env=None)
 
         async for status in cls._run_(task_service, timeout, wait):
             if status.sub_status in ("running-foreground", "starting"):

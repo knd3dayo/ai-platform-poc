@@ -3,12 +3,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+from functools import wraps
+import inspect
 from typing import Callable
 
 from dotenv import load_dotenv
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 
 from ..core.endopoint import EndPoint
+from ...common.request_headers import RequestHeaders, set_current_request_headers
 
 
 def parse_args() -> argparse.Namespace:
@@ -59,12 +62,43 @@ def _normalize_tool_name(name: str) -> str:
 
 
 def prepare_mcp(mcp: FastMCP, tools_option: str) -> None:
+	def header_aware_tool(mcp_instance: FastMCP):
+		def decorator(func):
+			@wraps(func)
+			async def wrapper(*args, **kwargs):
+				context = kwargs.pop("context", None)
+				if isinstance(context, Context):
+					request_context = getattr(context, "request_context", None)
+					request = getattr(request_context, "request", None) if request_context else None
+					if request is not None:
+						headers = {str(k).lower(): str(v) for k, v in request.headers.items()}
+						set_current_request_headers(RequestHeaders.from_mapping(headers))
+				return await func(*args, **kwargs)
+
+			sig = inspect.signature(func)
+			params = list(sig.parameters.values())
+			if "context" not in [p.name for p in params]:
+				params.append(
+					inspect.Parameter(
+						"context",
+						inspect.Parameter.KEYWORD_ONLY,
+						annotation=Context,
+						default=None,
+					)
+				)
+			setattr(wrapper, "__signature__", sig.replace(parameters=params))
+			return mcp_instance.tool()(wrapper)
+
+		return decorator
+
 	tool_registry: dict[str, Callable[..., object]] = {
 		"healthz": EndPoint.healthz,
 		"execute": EndPoint.execute,
 		"status": EndPoint.status,
 		"cancel": EndPoint.cancel,
 	}
+
+	tool_decorator = header_aware_tool(mcp)
 
 	if tools_option:
 		selected = [_normalize_tool_name(t) for t in tools_option.split(",")]
@@ -76,11 +110,11 @@ def prepare_mcp(mcp: FastMCP, tools_option: str) -> None:
 		for t in selected:
 			if not t:
 				continue
-			mcp.tool()(tool_registry[t])
+			tool_decorator(tool_registry[t])
 		return
 
 	for fn in tool_registry.values():
-		mcp.tool()(fn)
+		tool_decorator(fn)
 
 
 async def main() -> None:

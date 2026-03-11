@@ -23,6 +23,7 @@ class AbstractTaskService(ABC):
         sources: Optional[list[Path]],
         task_id: Optional[str],
         workspace_path: Optional[Path] = None,
+        extra_env: Optional[dict[str, str]] = None,
     ) -> None:
         raise NotImplementedError
 

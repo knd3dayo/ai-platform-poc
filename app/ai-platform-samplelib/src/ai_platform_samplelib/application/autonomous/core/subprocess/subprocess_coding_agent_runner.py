@@ -32,6 +32,7 @@ class SubprocessCodingAgentRunner(AbstractAgentRunner):
         task_id: Optional[str] = None,
         workspace_path: Optional[Union[str, pathlib.Path]] = None,
         command_base: Optional[str] = None,
+        extra_env: Optional[dict[str, str]] = None,
     ) -> None:
         self.task_id = task_id or str(uuid.uuid4())
         cfg = CodingAgentConfig.from_env()
@@ -46,6 +47,11 @@ class SubprocessCodingAgentRunner(AbstractAgentRunner):
             "AI_PLATFORM_SUBPROCESS_COMMAND", os.getenv("COMPOSE_COMMAND", "opencode run")
         )
         self.command: list[str] = shlex.split(self.command_base)
+
+        # Per-task env (e.g., Authorization) to be inherited by the entrypoint process.
+        self.extra_env: dict[str, str] = {
+            str(k): str(v) for k, v in (extra_env or {}).items() if v is not None
+        }
 
         self.task_status = TaskStatus.create(task_id=self.task_id)
         self.task_status.metadata["workspace_path"] = self.workspace.resolve().as_posix()
@@ -85,9 +91,15 @@ class SubprocessCodingAgentRunner(AbstractAgentRunner):
         workspace_path: Optional[Union[str, pathlib.Path]] = None,
         detach: bool = True,
         command_base: Optional[str] = None,
+        extra_env: Optional[dict[str, str]] = None,
         **_kwargs,
     ) -> "SubprocessCodingAgentRunner":
-        runner = cls(task_id=task_id, workspace_path=workspace_path, command_base=command_base)
+        runner = cls(
+            task_id=task_id,
+            workspace_path=workspace_path,
+            command_base=command_base,
+            extra_env=extra_env,
+        )
         if prompt:
             runner.command = [*runner.command, prompt]
         runner.prepare_workspace(source_paths=source_paths)
@@ -113,8 +125,16 @@ class SubprocessCodingAgentRunner(AbstractAgentRunner):
 
         import subprocess  # local import to keep module lightweight
 
+        env = os.environ.copy()
+        # Do not persist secrets to disk; pass per-task env via subprocess env.
+        for k, v in self.extra_env.items():
+            if v is None:
+                continue
+            env[str(k)] = str(v)
+
         proc = subprocess.Popen(
             entrypoint_cmd,
+            env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,

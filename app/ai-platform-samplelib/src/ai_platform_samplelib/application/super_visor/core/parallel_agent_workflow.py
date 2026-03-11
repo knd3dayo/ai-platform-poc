@@ -192,11 +192,11 @@ def _extract_tasks_from_plan_text(plan_text: str, *, max_tasks: int = 50) -> lis
 import typer
 # ... 他のインポート ...
 # LLM にバインドする「実行ツール」は対話プロンプトを出さないものだけに限定する。
-# HITL 版は CLI の並列ワーカーが直接呼ぶ用途に閉じる（サーバ等で誤ってハングしないように）。
-local_tools = [run_executor_local]
+# SV→Executor の呼び出しは MCP に統一する（初期段階: host-side python fastmcp server 想定）。
+local_tools = Tools.tools
 
-# 並列ワーカー用（HITL版も含める）
-parallel_default_tools = [run_executor_local, run_executor_local_hitl]
+# 並列ワーカー用（PoCではMCP実行を既定にする）
+parallel_default_tools = Tools.tools
 
 local_tool_node = ToolNode(local_tools)
 
@@ -589,7 +589,7 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
 
     try:
         wf = ParallelAgentWorkflow()
-        # API 経路も「Python内完結（ローカルツール優先）」をデフォルトとする
+        # API 経路も MCP 経由で Executor を呼び出すのをデフォルトとする
         graph = wf.create_graph(tools=local_tools).compile()
         server_config = ServerConfig.load_from_env()
 
@@ -597,7 +597,7 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
         llm_base_url = server_config.llm_base_url 
         executor_base_url = server_config.executor_base_url
 
-        # ユーザーがZIPを渡してきた場合は、一時ディレクトリへ展開して source_dir として案内する。
+        # ユーザーがZIPを渡してきた場合は、一時ディレクトリへ展開して workspace_path として案内する。
         user_message = message
         if input_zip_path:
             tmp_dir = pathlib.Path(input_zip_path).parent
@@ -605,9 +605,9 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
             user_message += (
                 "\n\n[入力ソース]\n"
                 "ユーザーがZIPファイルをアップロードしました。内容はサーバ側で展開済みです。\n"
-                "次の方針で `run_executor_local` を呼び出してください。\n"
-                f"- source_dir: {extracted_dir.as_posix()}\n"
-                "- executor コンテナ内の作業ディレクトリは /workspace（ファイル参照は /workspace から）\n"
+                "次の方針で `run_autonomous_agent_executor` を呼び出してください。\n"
+                f"- workspace_path: {extracted_dir.as_posix()}\n"
+                "- workspace_path はホスト側の共有workspace（絶対パス）です\n"
             )
 
         state: MessagesState = {"messages": [HumanMessage(content=user_message)]}
@@ -618,7 +618,7 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
             if job:
                 JobUtils.append_server_log(job, "LangGraph stream started")
                 JobUtils.append_server_log(job, f"llm_base_url={llm_base_url}")
-                JobUtils.append_server_log(job, "execution_mode=local")
+                JobUtils.append_server_log(job, "execution_mode=mcp")
                 job.metadata["llm_base_url"] = llm_base_url
                 job.metadata["executor_base_url"] = executor_base_url
 

@@ -6,6 +6,10 @@ COMPOSE_DIRECTORY=${AI_PLATFORM_POC_ROOT}/app/docker/autonomous-agent-executor/i
 COMPOSE_FILE=docker-compose.yml
 COMPOSE_SERVICE_NAME=all-in-one-code-executor
 
+# SV→Executor は MCP に統一（Executor側は TaskService で実際の実行を行う）
+EXECUTOR_MCP_URL=http://localhost:5001/mcp
+AI_PLATFORM_TASK_BACKEND=docker
+
 # opencodeを使用する場合の例
 # COMPOSE_COMMAND="opencode run"
 # claudeを使用する場合の例
