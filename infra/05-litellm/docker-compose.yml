@@ -14,8 +14,13 @@ services:
     command: [ "--config", "/app/config.yaml", "--detailed_debug" ]
     extra_hosts:
       - "localhost:host-gateway"
+
+    networks:
+      - ai_platform_internal
+      - ai_platform_egress
   
 networks:
-  default:
-    name: ai_platform_internal
+  ai_platform_egress:
+    external: true
+  ai_platform_internal:
     external: true
