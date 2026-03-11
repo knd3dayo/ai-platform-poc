@@ -19,6 +19,10 @@ def _infer_repo_root(start: pathlib.Path) -> Optional[pathlib.Path]:
     """
     start = start.resolve()
     for candidate in (start, *start.parents):
+        # repo layout (current): app/ai-platform-samplelib
+        if (candidate / "app" / "ai-platform-samplelib").exists():
+            return candidate
+        # legacy layout (PoCメモなど): 14-front/ + ai-platform-samplelib/
         if (candidate / "14-front" / "package.json").exists() and (candidate / "ai-platform-samplelib").exists():
             return candidate
     return None

@@ -31,6 +31,11 @@ dependencies = [
     "redis>=5.0.0"
 ]
 
+[project.optional-dependencies]
+tui = [
+    "textual>=0.70.0"
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

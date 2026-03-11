@@ -27,6 +27,7 @@ from ..core.utils import JobUtils, LLMUtils
 from .agent import LangGraphNodes
 from .tools import Tools, ToolNode
 from .agent import run_executor_local, run_executor_local_hitl
+from .hitl_core import HitlContext, HitlUi, run_integrated_agent_hitl
 from ai_platform_samplelib.event_bus import get_event_bus
 
 
@@ -377,164 +378,69 @@ async def run_integrated_agent_hitl_cli(
         auto_approve: bool = False,
     trace_id: Optional[str] = None,
     ) -> pathlib.Path | None:
-        """CLI向けの最小HITL（停止→保存→resume）実行。
+        """CLI向けHITL（停止→保存→resume）。
 
-        - 計画作成: LLM(planner)
-        - 実行: サブタスクを逐次実行
-        - HITL: サブタスクごとに a/s/p を選択
-        - p の場合はセッションJSONを書き出して終了し、パスを返す
+        実行ロジックは UI非依存の `run_integrated_agent_hitl` に寄せ、
+        Typer入出力のみをこの関数で提供する。
         """
 
         if resume_from is not None:
-            session_path = resume_from
-            session = HitlSession.load_json(session_path)
-            original_request = session.original_request
-            trace_id = session.trace_id or trace_id or str(uuid.uuid4())
-            tasks = session.tasks
-            results = list(session.results)
-            start_index = int(session.next_task_index or 0)
-            # source_dirs はセッション優先（当時の環境を再現）
-            if session.source_dirs:
-                source_dirs = [pathlib.Path(p) for p in session.source_dirs]
-            session_dir = session_path.parent
-            typer.secho(f"[HITL] セッションを再開します: {session_path}", fg=typer.colors.BLUE)
+            typer.secho(f"[HITL] セッションを再開します: {resume_from}", fg=typer.colors.BLUE)
         else:
-            session_id = str(uuid.uuid4())
-            trace_id = trace_id or str(uuid.uuid4())
-            if session_dir is None:
-                session_dir = _session_default_dir(source_dirs)
-            session_path = _session_file_path(session_dir, session_id)
-
-            original_request = _build_user_input_with_context(message, source_dirs)
-
             typer.secho("🤖 統合エージェント（HITL CLI）を起動中...", fg=typer.colors.MAGENTA, bold=True)
-            plan_state: MessagesState = {"messages": [HumanMessage(content=original_request)]}
-            planned = await LangGraphNodes.planner_node(plan_state)
-            plan_msg = planned["messages"][-1]
-            plan_text = getattr(plan_msg, "content", "") or ""
-            typer.secho("\n📋 --- 提案された実行計画 ---", fg=typer.colors.YELLOW, bold=True)
-            typer.echo(plan_text)
 
-            tasks = _extract_tasks_from_plan_text(plan_text)
-            if not tasks:
-                typer.secho("[HITL] タスクを抽出できませんでした。", fg=typer.colors.RED)
+        class _TyperUi(HitlUi):
+            async def on_trace(self, trace_id: str) -> None:
+                typer.secho(f"[super-visor] trace_id={trace_id}", fg=typer.colors.BLUE)
+
+            async def on_plan(self, plan_text: str, tasks: list[str]) -> None:
+                typer.secho("\n📋 --- 提案された実行計画 ---", fg=typer.colors.YELLOW, bold=True)
+                typer.echo(plan_text)
+
+            async def confirm_start(self) -> bool:
+                return bool(typer.confirm("\n上記計画で実行を開始しますか？"))
+
+            async def on_task_start(self, ctx: HitlContext) -> None:
+                typer.secho(
+                    f"\n🧩 サブタスク {ctx.idx+1}/{ctx.total}: {ctx.task}",
+                    fg=typer.colors.CYAN,
+                    bold=True,
+                )
+                if not auto_approve:
+                    typer.secho("[HITL] ここで人間の判断が入ります。", fg=typer.colors.YELLOW)
+
+            async def choose_action(self, ctx: HitlContext, *, default: str):
+                return _prompt_hitl_action(default=default)
+
+            async def on_task_result(self, ctx: HitlContext, result: dict[str, Any]) -> None:
+                # CLIでは詳細表示は抑え、必要なら executor 側stdout/stderrを参照
                 return None
 
-            if not typer.confirm("\n上記計画で実行を開始しますか？"):
-                typer.secho("🚫 実行はキャンセルされました。", fg=typer.colors.RED, bold=True)
-                return None
-
-            results = []
-            start_index = 0
-            session = HitlSession(
-                session_id=session_id,
-                status="paused",
-                original_request=original_request,
-                trace_id=trace_id,
-                source_dirs=[str(p.resolve()) for p in source_dirs],
-                tasks=tasks,
-                next_task_index=0,
-                results=[],
-            )
-
-        # 逐次実行
-        for idx in range(start_index, len(tasks)):
-            task = (tasks[idx] or "").strip()
-            if not task:
-                continue
-
-            typer.secho(f"\n🧩 サブタスク {idx+1}/{len(tasks)}: {task}", fg=typer.colors.CYAN, bold=True)
-
-            prompt = (
-                "あなたは実行担当の自律型コーディングエージェントです。\n"
-                "次のサブタスクを実行してください。必要ならファイルを読み、結果を日本語で報告してください。\n\n"
-                f"[サブタスク]\n{task}\n\n"
-                f"[元の依頼]\n{original_request}\n"
-            )
-
-            if auto_approve:
-                action = "a"
-            else:
-                typer.secho("[HITL] ここで人間の判断が入ります。", fg=typer.colors.YELLOW)
-                action = _prompt_hitl_action(default="a")
-
-            if action == "p":
-                # 次のサブタスクから再開
-                session.next_task_index = idx
-                session.results = results
-                session.status = "paused"
-                session.save_json(session_path)
-                typer.secho(f"[HITL] 一時停止しました。再開ファイル: {session_path}", fg=typer.colors.YELLOW, bold=True)
-                return session_path
-
-            started_at = time.time()
-            tool_name = None
-
-            if action == "s":
-                # 実行しない
-                ended_at = time.time()
-                results.append(
-                    {
-                        "task": task,
-                        "started_at": started_at,
-                        "ended_at": ended_at,
-                        "elapsed_sec": round(ended_at - started_at, 3),
-                        "tool": None,
-                        "result": {
-                            "status": "exited",
-                            "sub_status": "cancelled",
-                            "stdout": "Skipped by user (HITL deny).",
-                            "stderr": None,
-                        },
-                    }
-                )
-            else:
-                # 実行する
-                tool_name = getattr(run_executor_local, "name", "run_executor_local")
-                tool_args: Dict[str, Any] = {"prompt": prompt, "timeout": 600}
-                if source_dirs:
-                    tool_args["source_dirs"] = [str(p) for p in source_dirs]
-                if trace_id:
-                    tool_args["trace_id"] = trace_id
-
-                result = await run_executor_local.ainvoke(tool_args)
-
-                ended_at = time.time()
-                results.append(
-                    {
-                        "task": task,
-                        "started_at": started_at,
-                        "ended_at": ended_at,
-                        "elapsed_sec": round(ended_at - started_at, 3),
-                        "tool": tool_name,
-                        "result": result,
-                    }
+            async def on_paused(self, session_path: pathlib.Path) -> None:
+                typer.secho(
+                    f"[HITL] 一時停止しました。再開ファイル: {session_path}",
+                    fg=typer.colors.YELLOW,
+                    bold=True,
                 )
 
-            # 進捗を都度保存（落ちても再開できるように）
-            session.next_task_index = idx + 1
-            session.results = results
-            session.status = "paused"
-            session.save_json(session_path)
+            async def on_final_report(self, final_text: str) -> None:
+                typer.secho("\n🏁 最終報告:", fg=typer.colors.GREEN, bold=True)
+                typer.echo(final_text)
 
-        # 完了
-        raw_summary = _raw_summary_from_results(results=results, max_parallel=1)
-        summary_msg = await LangGraphNodes.planner_summarize_results(
-            original_request=original_request,
-            results=results,
-            raw_summary=raw_summary,
+        result = await run_integrated_agent_hitl(
+            message=message,
+            source_dirs=source_dirs,
+            session_dir=session_dir,
+            resume_from=resume_from,
+            auto_approve=auto_approve,
+            trace_id=trace_id,
+            ui=_TyperUi(),
         )
-        final_text = (getattr(summary_msg, "content", "") or "").strip()
-        if raw_summary:
-            final_text = f"{final_text}\n\n---\n[詳細サマリ]\n{raw_summary}".strip()
 
-        typer.secho("\n🏁 最終報告:", fg=typer.colors.GREEN, bold=True)
-        typer.echo(final_text)
-
-        session.status = "completed"
-        session.next_task_index = len(tasks)
-        session.results = results
-        session.save_json(session_path)
+        if result is None:
+            return None
+        if result.status == "paused":
+            return result.session_path
         return None
 
 def _extract_tool_payloads_from_messages(messages: List[Any]) -> List[Dict[str, Any]]:
