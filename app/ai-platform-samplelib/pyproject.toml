@@ -26,14 +26,10 @@ dependencies = [
     "aiosqlite",
     "langgraph-checkpoint",
     "langgraph-checkpoint-sqlite",
+    "textual>=0.70.0",
     "uvicorn",
     "docker",
     "redis>=5.0.0"
-]
-
-[project.optional-dependencies]
-tui = [
-    "textual>=0.70.0"
 ]
 
 [tool.setuptools.packages.find]
