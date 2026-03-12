@@ -55,15 +55,16 @@ class EndPoint:
 
 
     @staticmethod
-    async def execute(
+    async def _execute_main_(
+        wait_for_completion: bool,
         req: Annotated[ExecuteRequest, Body(description="タスク実行リクエスト")],
-        authorization: Annotated[Optional[str], Header(default=None)] = None,
-        x_trace_id: Annotated[Optional[str], Header(default=None, alias="x-trace-id")] = None,
+        authorization: Annotated[Optional[str], Header()] = None,
+        x_trace_id: Annotated[Optional[str], Header(alias="x-trace-id")] = None,
     ) -> ExecuteResponse:
         """
-        タスク実行用エンドポイント。SVはこれを叩いてエージェントにタスク実行を指示する。
+        タスク実行用エンドポイント（同期版/非同期版）の共通処理。SVはこれを叩いてエージェントにタスク実行を指示する。
+        引数のwait_for_completionで、タスク完了までHTTPレスポンスを返すかどうかを制御する。
         """
-        
         workspace_dir = EndPoint.validate_workspace_path(req.workspace_path)
 
         # Prefer explicit HTTP headers when present; otherwise fallback to MCP captured headers.
@@ -88,10 +89,46 @@ class EndPoint:
         if req.trace_id:
             task_service.get_agent_runner().get_task_status().trace_id = req.trace_id
 
-        task_status = task_service.start(wait=False, timeout=req.timeout)
+        task_status = task_service.start(wait=wait_for_completion, timeout=req.timeout)
         TaskManager.upsert_task(task_status)
 
+        # For synchronous execution, block until the task converges to a final state.
+        # `start(wait=True)` only marks the initial intent (foreground) for the backend;
+        # actual convergence is performed by `monitor()`.
+        if wait_for_completion:
+            async for st in task_service.monitor(timeout=req.timeout):
+                TaskManager.upsert_task(st)
+
         return ExecuteResponse(task_id=task_status.task_id)
+
+    @staticmethod
+    async def execute_sync(
+        req: Annotated[ExecuteRequest, Body(description="タスク実行リクエスト")],
+        authorization: Annotated[Optional[str], Header()] = None,
+        x_trace_id: Annotated[Optional[str], Header(alias="x-trace-id")] = None,
+    ) -> ExecuteResponse:
+        """
+        タスク実行用エンドポイント（同期版）。ユーザーはこれを叩いてエージェントにタスク実行を指示する。
+        executeとの違いは、タスク完了までHTTPレスポンを返さない点。小規模タスクやテスト用途向け。
+        """
+        return await EndPoint._execute_main_(
+            wait_for_completion=True, req=req, authorization=authorization, x_trace_id=x_trace_id)
+
+
+    @staticmethod
+    async def execute_async(
+        req: Annotated[ExecuteRequest, Body(description="タスク実行リクエスト")],
+        authorization: Annotated[Optional[str], Header()] = None,
+        x_trace_id: Annotated[Optional[str], Header(alias="x-trace-id")] = None,
+    ) -> ExecuteResponse:
+        """
+        タスク実行用エンドポイント（非同期版）。ユーザーはこれを叩いてエージェントにタスク実行を指示する。
+        処理が完了する前にHTTPレスポンスを返す。
+        ユーザーは/statusエンドポイントを叩いてタスクの進捗や結果を取得する。   
+        キャンセルを行う場合は、/cancelエンドポイントを叩く。
+        """
+        return await EndPoint._execute_main_(
+            wait_for_completion=False, req=req, authorization=authorization, x_trace_id=x_trace_id)
 
     @staticmethod
     async def status(

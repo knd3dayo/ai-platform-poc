@@ -48,6 +48,12 @@ def parse_args() -> argparse.Namespace:
 			"fastmcp itself may not use it, but downstream libs can."
 		),
 	)
+	parser.add_argument(
+		"--sync_mode",
+		action="store_true",
+		help="Run MCP server in synchronous mode.",
+	)
+
 	return parser.parse_args()
 
 
@@ -61,7 +67,7 @@ def _normalize_tool_name(name: str) -> str:
 	return name
 
 
-def prepare_mcp(mcp: FastMCP, tools_option: str) -> None:
+def prepare_mcp(mcp: FastMCP, tools_option: str, sync_mode: bool) -> None:
 	def header_aware_tool(mcp_instance: FastMCP):
 		def decorator(func):
 			@wraps(func)
@@ -93,7 +99,7 @@ def prepare_mcp(mcp: FastMCP, tools_option: str) -> None:
 
 	tool_registry: dict[str, Callable[..., object]] = {
 		"healthz": EndPoint.healthz,
-		"execute": EndPoint.execute,
+		"execute": EndPoint.execute_async if not sync_mode else EndPoint.execute_sync,
 		"status": EndPoint.status,
 		"cancel": EndPoint.cancel,
 	}
@@ -125,7 +131,7 @@ async def main() -> None:
 		os.environ.setdefault("LOG_LEVEL", args.log_level)
 
 	mcp = FastMCP("autonomous_agent_executor")
-	prepare_mcp(mcp, args.tools)
+	prepare_mcp(mcp, args.tools, args.sync_mode)
 
 	if args.mode == "stdio":
 		await mcp.run_async()

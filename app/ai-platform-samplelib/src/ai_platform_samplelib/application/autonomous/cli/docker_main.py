@@ -26,7 +26,15 @@ def run(
     ),
     task_id: Optional[str] = typer.Option(None, "--id"),
     timeout: int = 300,
-    wait: bool = True
+    wait: bool = typer.Option(
+        True,
+        "--wait/--no-wait",
+        "--sync-mode/--async-mode",
+        help=(
+            "同期/非同期の実行モード。"
+            " --wait/--sync-mode は完了まで待機し、--no-wait/--async-mode は task_id を返して終了します。"
+        ),
+    ),
 ):
     """新しいタスクを実行します。"""
     if sources:
