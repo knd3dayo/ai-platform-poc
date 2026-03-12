@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 from ..core.endopoint import EndPoint
 from ..model.models import CancelResponse, ExecuteResponse, HealthzResponse, TaskStatus
+from ...common.request_headers import RequestHeaders, bind_current_request_headers
 
 
 def create_app(*, sync_mode: bool = False) -> FastAPI:
@@ -14,6 +15,12 @@ def create_app(*, sync_mode: bool = False) -> FastAPI:
     """
 
     app = FastAPI(title="Autonomous Agent Executor API", version="0.1")
+
+    @app.middleware("http")
+    async def _capture_request_headers(request: Request, call_next):
+        headers = {str(k).lower(): str(v) for k, v in request.headers.items()}
+        with bind_current_request_headers(RequestHeaders.from_mapping(headers)):
+            return await call_next(request)
 
     app.get("/healthz", response_model=HealthzResponse)(EndPoint.healthz)
     app.post("/execute", response_model=ExecuteResponse)(

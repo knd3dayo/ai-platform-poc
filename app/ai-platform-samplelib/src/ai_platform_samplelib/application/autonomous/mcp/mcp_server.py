@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP, Context
 
 from ..core.endopoint import EndPoint
-from ...common.request_headers import RequestHeaders, set_current_request_headers
+from ...common.request_headers import RequestHeaders, bind_current_request_headers
 
 
 def parse_args() -> argparse.Namespace:
@@ -73,13 +73,16 @@ def prepare_mcp(mcp: FastMCP, tools_option: str, sync_mode: bool) -> None:
 			@wraps(func)
 			async def wrapper(*args, **kwargs):
 				context = kwargs.pop("context", None)
+				headers_obj: RequestHeaders | None = None
 				if isinstance(context, Context):
 					request_context = getattr(context, "request_context", None)
 					request = getattr(request_context, "request", None) if request_context else None
 					if request is not None:
 						headers = {str(k).lower(): str(v) for k, v in request.headers.items()}
-						set_current_request_headers(RequestHeaders.from_mapping(headers))
-				return await func(*args, **kwargs)
+						headers_obj = RequestHeaders.from_mapping(headers)
+
+				with bind_current_request_headers(headers_obj):
+					return await func(*args, **kwargs)
 
 			sig = inspect.signature(func)
 			params = list(sig.parameters.values())

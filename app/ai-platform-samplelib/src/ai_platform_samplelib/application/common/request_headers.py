@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Mapping, Optional
+from typing import Iterator, Mapping, Optional
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,20 @@ _current_request_headers: ContextVar[Optional[RequestHeaders]] = ContextVar(
 
 def set_current_request_headers(headers: Optional[RequestHeaders]) -> None:
     _current_request_headers.set(headers)
+
+
+@contextmanager
+def bind_current_request_headers(headers: Optional[RequestHeaders]) -> Iterator[None]:
+    """Temporarily bind current request headers for the lifetime of a scope.
+
+    This prevents header values from leaking across unrelated requests/tool calls.
+    """
+
+    token = _current_request_headers.set(headers)
+    try:
+        yield
+    finally:
+        _current_request_headers.reset(token)
 
 
 def get_current_request_headers() -> Optional[RequestHeaders]:

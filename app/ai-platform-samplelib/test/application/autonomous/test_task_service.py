@@ -73,12 +73,14 @@ class _DummyService(AbstractTaskService):
         sources: Optional[list[Path]],
         task_id: Optional[str],
         workspace_path: Optional[Path] = None,
+        extra_env: Optional[dict[str, str]] = None,
     ) -> None:
         self.prepared = {
             "prompt": prompt,
             "sources": sources,
             "task_id": task_id,
             "workspace_path": workspace_path,
+            "extra_env": extra_env,
         }
         self._runner = _DummyRunner(task_id or "dummy")
 

@@ -2,7 +2,7 @@ import os
 import pathlib
 from typing import Any, Dict, Optional, Annotated
 
-from fastapi import Body, HTTPException, Path, Query, Header
+from fastapi import Body, HTTPException, Path, Query
 
 from ..core.task_service_factory import select_task_service
 from ..core.task_manager import TaskManager
@@ -58,8 +58,6 @@ class EndPoint:
     async def _execute_main_(
         wait_for_completion: bool,
         req: Annotated[ExecuteRequest, Body(description="タスク実行リクエスト")],
-        authorization: Annotated[Optional[str], Header()] = None,
-        x_trace_id: Annotated[Optional[str], Header(alias="x-trace-id")] = None,
     ) -> ExecuteResponse:
         """
         タスク実行用エンドポイント（同期版/非同期版）の共通処理。SVはこれを叩いてエージェントにタスク実行を指示する。
@@ -67,12 +65,10 @@ class EndPoint:
         """
         workspace_dir = EndPoint.validate_workspace_path(req.workspace_path)
 
-        # Prefer explicit HTTP headers when present; otherwise fallback to MCP captured headers.
-        incoming: Optional[RequestHeaders] = None
-        if authorization or x_trace_id:
-            incoming = RequestHeaders.from_values(authorization=authorization, trace_id=x_trace_id)
-        else:
-            incoming = get_current_request_headers()
+        # Inbound headers are captured by:
+        # - FastAPI middleware (HTTP API)
+        # - MCP tool wrapper (MCP server)
+        incoming = get_current_request_headers()
 
         if incoming and incoming.trace_id and not req.trace_id:
             req.trace_id = incoming.trace_id
@@ -104,22 +100,17 @@ class EndPoint:
     @staticmethod
     async def execute_sync(
         req: Annotated[ExecuteRequest, Body(description="タスク実行リクエスト")],
-        authorization: Annotated[Optional[str], Header()] = None,
-        x_trace_id: Annotated[Optional[str], Header(alias="x-trace-id")] = None,
     ) -> ExecuteResponse:
         """
         タスク実行用エンドポイント（同期版）。ユーザーはこれを叩いてエージェントにタスク実行を指示する。
         executeとの違いは、タスク完了までHTTPレスポンを返さない点。小規模タスクやテスト用途向け。
         """
-        return await EndPoint._execute_main_(
-            wait_for_completion=True, req=req, authorization=authorization, x_trace_id=x_trace_id)
+        return await EndPoint._execute_main_(wait_for_completion=True, req=req)
 
 
     @staticmethod
     async def execute_async(
         req: Annotated[ExecuteRequest, Body(description="タスク実行リクエスト")],
-        authorization: Annotated[Optional[str], Header()] = None,
-        x_trace_id: Annotated[Optional[str], Header(alias="x-trace-id")] = None,
     ) -> ExecuteResponse:
         """
         タスク実行用エンドポイント（非同期版）。ユーザーはこれを叩いてエージェントにタスク実行を指示する。
@@ -127,8 +118,7 @@ class EndPoint:
         ユーザーは/statusエンドポイントを叩いてタスクの進捗や結果を取得する。   
         キャンセルを行う場合は、/cancelエンドポイントを叩く。
         """
-        return await EndPoint._execute_main_(
-            wait_for_completion=False, req=req, authorization=authorization, x_trace_id=x_trace_id)
+        return await EndPoint._execute_main_(wait_for_completion=False, req=req)
 
     @staticmethod
     async def status(
