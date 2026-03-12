@@ -1,0 +1,39 @@
+services:
+  samba:
+    build: .
+    image: ghcr.io/servercontainers/samba
+    restart: always
+    # note that this network_mode makes it super easy (especially for zeroconf) but is not as safe as exposing ports directly
+    # more about that here: https://book.hacktricks.wiki/en/linux-hardening/privilege-escalation/docker-security/docker-breakout-privilege-escalation/index.html#hostnetwork
+    network_mode: host
+    # uncomment to solve bug: https://github.com/ServerContainers/samba/issues/50 - wsdd2 only - not needed for samba
+    #cap_add:
+    #  - CAP_NET_ADMIN
+    environment:
+      # uncomment to enable fail fast (currently only fails fast if there are conflicts/errors during user/group creation)
+      #FAIL_FAST: 1
+
+      MODEL: 'TimeCapsule'
+      AVAHI_NAME: StorageServer
+
+      SAMBA_CONF_LOG_LEVEL: 3
+
+      # uncomment to disable optional services
+      #WSDD2_DISABLE: 1
+      #AVAHI_DISABLE: 1
+      #NETBIOS_DISABLE: 1
+
+      # パスワード例。以下は　user: foo | password: bar　で作成した場合。以下コマンドでハッシュ値などを取得できる。
+      # docker run -ti --rm --entrypoint create-hash.sh
+      # ACCOUNT_foo: "foo:1000:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX:86C156FC198B358CCCF6278D8BD49B6A:[U          ]:LCT-67D8D9B6:"
+
+      SAMBA_VOLUME_CONFIG_documents: |
+        [documents]
+         path = /data/documents
+         guest ok = yes
+         browseable = yes
+         read only = no
+
+    volumes:
+      - ${HOME}/data/documents/:/data/documents/
+
