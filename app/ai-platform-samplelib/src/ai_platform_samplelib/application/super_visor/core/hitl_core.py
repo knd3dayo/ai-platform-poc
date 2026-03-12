@@ -9,8 +9,7 @@ from typing import Any, Awaitable, Callable, Literal, Optional, Protocol
 from langchain_core.messages import HumanMessage
 from langgraph.graph import MessagesState
 
-from ..model.hitl_session import HitlSession
-from .agent import run_executor_local
+from ..model.models import HitlSession
 from .agent import LangGraphNodes
 from .hitl_utils import (
     build_user_input_with_context,
@@ -19,6 +18,7 @@ from .hitl_utils import (
     session_default_dir,
     session_file_path,
 )
+from .tools import Tools
 
 
 HitlAction = Literal["a", "s", "p"]
@@ -205,14 +205,25 @@ async def run_integrated_agent_hitl(
         if action == "s":
             results.append(_skipped_result(task=task))
         else:
-            tool_args: dict[str, Any] = {"prompt": prompt, "timeout": 600}
-            if source_dirs:
-                tool_args["source_dirs"] = [str(p) for p in source_dirs]
+            if not source_dirs:
+                raise RuntimeError(
+                    "source_dirs is required to run executor via MCP. "
+                    "Provide at least one shared workspace directory."
+                )
+
+            workspace_path = str(source_dirs[0].resolve())
+            tool = Tools.run_autonomous_agent_executor
+
+            tool_args: dict[str, Any] = {
+                "prompt": prompt,
+                "workspace_path": workspace_path,
+                "timeout": 600,
+            }
             if trace_id:
                 tool_args["trace_id"] = trace_id
 
             started_at = time.time()
-            result = await run_executor_local.ainvoke(tool_args)
+            result = await tool.ainvoke(tool_args)
             ended_at = time.time()
             results.append(
                 {
@@ -220,7 +231,7 @@ async def run_integrated_agent_hitl(
                     "started_at": started_at,
                     "ended_at": ended_at,
                     "elapsed_sec": round(ended_at - started_at, 3),
-                    "tool": getattr(run_executor_local, "name", "run_executor_local"),
+                    "tool": getattr(tool, "name", "run_autonomous_agent_executor"),
                     "result": result,
                 }
             )
@@ -234,14 +245,23 @@ async def run_integrated_agent_hitl(
         session.save_json(session_path)
 
     raw_summary = raw_summary_from_results(results=results, max_parallel=1)
-    summary_msg = await LangGraphNodes.planner_summarize_results(
-        original_request=original_request,
-        results=results,
-        raw_summary=raw_summary,
-    )
-    final_text = (getattr(summary_msg, "content", "") or "").strip()
+    final_text = ""
+    try:
+        summary_msg = await LangGraphNodes.planner_summarize_results(
+            original_request=original_request,
+            results=results,
+            raw_summary=raw_summary,
+        )
+        final_text = (getattr(summary_msg, "content", "") or "").strip()
+    except Exception as e:
+        # If LLM configuration is missing (e.g. resume-only mode), keep the run completed.
+        final_text = f"(要約生成に失敗しました: {e!r})".strip()
+
     if raw_summary:
-        final_text = f"{final_text}\n\n---\n[詳細サマリ]\n{raw_summary}".strip()
+        if final_text:
+            final_text = f"{final_text}\n\n---\n[詳細サマリ]\n{raw_summary}".strip()
+        else:
+            final_text = f"---\n[詳細サマリ]\n{raw_summary}".strip()
 
     await effective_ui.on_final_report(final_text)
 

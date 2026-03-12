@@ -6,7 +6,7 @@ from langchain_core.tools import tool
 from langgraph.prebuilt import ToolNode
 
 from ..model.models import ServerConfig
-from .autonomous_executor_mcp_client import AutonomousExecutorMcpClient
+from .mcp_client import AutonomousExecutorMcpClient
 from .utils import error_result
 
 

@@ -4,7 +4,7 @@ import typer
 import uuid
 from typing import Optional, Callable, Awaitable, cast
 from typing_extensions import Annotated
-from ..core.parallel_agent_workflow import run_integrated_agent_core, run_integrated_agent_hitl_cli
+from ..core.workflow import run_integrated_agent_core, run_integrated_agent_hitl_cli
 
 # インポートパスは環境に合わせて適宜調整してください
 

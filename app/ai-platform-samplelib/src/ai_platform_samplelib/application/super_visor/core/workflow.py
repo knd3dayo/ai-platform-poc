@@ -1,5 +1,5 @@
 import time
-from typing import Any, Dict, Optional, List, Tuple, Deque, TypedDict, Annotated
+from typing import Any, Dict, Optional, List, TypedDict, Annotated, cast
 import operator
 import json
 import threading
@@ -8,7 +8,6 @@ import pathlib
 import re
 import os
 from collections import deque
-import zipfile
 from datetime import datetime, timezone
 import uuid
 
@@ -16,18 +15,15 @@ from langchain_core.messages import AIMessage
 from langchain_core.messages import HumanMessage
 
 from langgraph.graph import StateGraph, START, END, MessagesState
-from langgraph.graph import MessagesState
 from langgraph.graph.message import add_messages
 from langgraph.types import Send
 
 from ...autonomous.model.models import TaskStatus
-from ..model.hitl_session import HitlSession
 from ..model.models import ServerConfig, jobs_lock, jobs
-from ..core.utils import JobUtils, LLMUtils
+from .utils import JobUtils
 from .agent import LangGraphNodes
 from .tools import Tools, ToolNode
-from .agent import run_executor_local, run_executor_local_hitl
-from .hitl_core import HitlContext, HitlUi, run_integrated_agent_hitl
+from .hitl_core import HitlAction, HitlContext, HitlUi, run_integrated_agent_hitl
 from ai_platform_samplelib.event_bus import get_event_bus
 
 
@@ -36,9 +32,7 @@ class ParallelExecutionState(TypedDict, total=False):
     messages: Annotated[list, add_messages]
 
     # Optional execution context
-    source_dir: Optional[pathlib.Path]
     source_dirs: Optional[list[pathlib.Path]]
-    zip_path: Optional[str]
 
     # Trace context (SV実行全体の相関ID)
     trace_id: Optional[str]
@@ -224,27 +218,6 @@ def _build_user_input_with_context(message: str, source_dirs: list[pathlib.Path]
 
     return user_input
 
-
-def _safe_extract_zip(zip_path: str, dest_dir: pathlib.Path) -> pathlib.Path:
-    """ZIP を dest_dir に安全に展開して、展開先ディレクトリを返す。"""
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    base = dest_dir.resolve()
-
-    with zipfile.ZipFile(zip_path) as zf:
-        for member in zf.infolist():
-            # ディレクトリはスキップ（ZipFile.extract でも作られるが明示）
-            if member.is_dir():
-                continue
-
-            # ZipSlip 対策: 展開後パスが base 配下に収まることを保証する
-            target = (dest_dir / member.filename).resolve()
-            if not str(target).startswith(str(base) + os.sep) and target != base:
-                raise ValueError(f"Unsafe zip entry path: {member.filename}")
-
-        zf.extractall(dest_dir)
-
-    return dest_dir
-
 async def run_integrated_agent_core(
     message: str,
     source_paths: Optional[list[pathlib.Path]],
@@ -257,11 +230,17 @@ async def run_integrated_agent_core(
     if not trace_id:
         trace_id = str(uuid.uuid4())
     
-    wf = ParallelAgentWorkflow()
     # プランナーを有効化 + 4並列ワーカーで実行
     # HITL(承認待ち)がある場合は並列度を落として、対話が混線しないようにする。
     max_parallel = 4 if auto_approve else 1
-    graph = wf.create_parallel_graph(include_planner=True, tools=tools, max_parallel=max_parallel).compile()
+    wf = ParallelAgentWorkflow(
+        include_planner=True,
+        include_planner_summary=True,
+        tools=tools,
+        parallel=True,
+        max_parallel=max_parallel,
+    )
+    graph = wf.create_graph().compile()
 
     normalized_sources: list[pathlib.Path] = []
     for p in (source_paths or []):
@@ -275,9 +254,7 @@ async def run_integrated_agent_core(
         "auto_approve": auto_approve,
         "trace_id": trace_id,
     }
-    if len(normalized_sources) == 1:
-        initial_input["source_dir"] = normalized_sources[0]
-    elif len(normalized_sources) >= 2:
+    if len(normalized_sources) >= 1:
         initial_input["source_dirs"] = normalized_sources
 
     # stream_mode="updates" でノードごとの出力をハンドリング
@@ -324,7 +301,7 @@ async def run_integrated_agent_core(
                 typer.echo(latest_msg.content)
 
 
-def _prompt_hitl_action(*, default: str = "a") -> str:
+def _prompt_hitl_action(*, default: HitlAction = "a") -> HitlAction:
     """承認待ち入力（CLI）。
 
     Returns:
@@ -338,35 +315,8 @@ def _prompt_hitl_action(*, default: str = "a") -> str:
         raw = typer.prompt("実行しますか？ [a]承認 / [s]却下 / [p]後で再開", default=default)
         val = (raw or "").strip().lower()
         if val in allowed:
-            return val
+            return cast(HitlAction, val)
         typer.secho("a/s/p のいずれかを入力してください。", fg=typer.colors.RED)
-
-
-def _session_default_dir(source_dirs: list[pathlib.Path]) -> pathlib.Path:
-    # source_dirs[0] を優先し、無ければ cwd 配下
-    base = (source_dirs[0] if source_dirs else pathlib.Path.cwd()).resolve()
-    return base / ".sv_sessions"
-
-
-def _session_file_path(session_dir: pathlib.Path, session_id: str) -> pathlib.Path:
-    return session_dir / f"sv_hitl_{session_id}.json"
-
-
-def _raw_summary_from_results(*, results: list[dict], max_parallel: int) -> str:
-    lines: list[str] = []
-    lines.append(f"逐次実行の結果サマリ (max_parallel={max_parallel}):")
-    for i, item in enumerate(results, start=1):
-        task = item.get("task")
-        tool_name = item.get("tool")
-        elapsed = item.get("elapsed_sec")
-        res = item.get("result")
-        status = res.get("status") if isinstance(res, dict) else None
-        stdout = res.get("stdout") if isinstance(res, dict) else None
-        tail = ""
-        if isinstance(stdout, str) and stdout.strip():
-            tail = stdout.strip().splitlines()[-1]
-        lines.append(f"{i}. task={task!s} tool={tool_name!s} elapsed={elapsed!s}s status={status!s} last={tail!s}")
-    return "\n".join(lines)
 
 
 async def run_integrated_agent_hitl_cli(
@@ -394,6 +344,7 @@ async def run_integrated_agent_hitl_cli(
                 typer.secho(f"[super-visor] trace_id={trace_id}", fg=typer.colors.BLUE)
 
             async def on_plan(self, plan_text: str, tasks: list[str]) -> None:
+                del tasks
                 typer.secho("\n📋 --- 提案された実行計画 ---", fg=typer.colors.YELLOW, bold=True)
                 typer.echo(plan_text)
 
@@ -409,10 +360,12 @@ async def run_integrated_agent_hitl_cli(
                 if not auto_approve:
                     typer.secho("[HITL] ここで人間の判断が入ります。", fg=typer.colors.YELLOW)
 
-            async def choose_action(self, ctx: HitlContext, *, default: str):
+            async def choose_action(self, ctx: HitlContext, *, default: HitlAction) -> HitlAction:
+                del ctx
                 return _prompt_hitl_action(default=default)
 
             async def on_task_result(self, ctx: HitlContext, result: dict[str, Any]) -> None:
+                del ctx, result
                 # CLIでは詳細表示は抑え、必要なら executor 側stdout/stderrを参照
                 return None
 
@@ -466,7 +419,7 @@ def _extract_tool_payloads_from_messages(messages: List[Any]) -> List[Dict[str, 
     return payloads
 
 
-def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Optional[str]) -> None:
+def _run_workflow_in_background(thread_id: str, message: str) -> None:
     """parallel_agent_workflow をバックグラウンドで実行し、jobs に途中経過/結果を格納する。"""
 
     event_bus = get_event_bus()
@@ -494,9 +447,10 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
         pass
 
     try:
-        wf = ParallelAgentWorkflow()
         # API 経路も MCP 経由で Executor を呼び出すのをデフォルトとする
-        graph = wf.create_graph(tools=local_tools).compile()
+        # NOTE: 既存挙動互換のため、バックグラウンド経路は planner を無効化する。
+        wf = ParallelAgentWorkflow(include_planner=False, tools=local_tools, parallel=False)
+        graph = wf.create_graph().compile()
         server_config = ServerConfig.load_from_env()
 
         # parallel_agent_workflow 側のデフォルト分岐と合わせる
@@ -505,16 +459,6 @@ def _run_workflow_in_background(thread_id: str, message: str, input_zip_path: Op
 
         # ユーザーがZIPを渡してきた場合は、一時ディレクトリへ展開して workspace_path として案内する。
         user_message = message
-        if input_zip_path:
-            tmp_dir = pathlib.Path(input_zip_path).parent
-            extracted_dir = _safe_extract_zip(input_zip_path, tmp_dir / "unzipped")
-            user_message += (
-                "\n\n[入力ソース]\n"
-                "ユーザーがZIPファイルをアップロードしました。内容はサーバ側で展開済みです。\n"
-                "次の方針で `run_autonomous_agent_executor` を呼び出してください。\n"
-                f"- workspace_path: {extracted_dir.as_posix()}\n"
-                "- workspace_path はホスト側の共有workspace（絶対パス）です\n"
-            )
 
         state: MessagesState = {"messages": [HumanMessage(content=user_message)]}
 
@@ -688,8 +632,31 @@ class ParallelAgentWorkflow:
             return "tools" # ツール呼び出しがあればtoolsノードへ
         return END         # なければ会話終了
 
+    def __init__(self,         
+            include_planner: bool = True,
+            include_planner_summary: bool = True,
+            tools: Optional[list] = None,
+            parallel: bool = False,
+            max_parallel: int = 4,
+) -> None:
+        self.include_planner = include_planner
+        self.include_planner_summary = include_planner_summary
+        self.tools = tools
+        self.parallel = parallel
+        self.max_parallel = max_parallel
 
-    def create_graph(self, include_planner: bool = False, tools: Optional[list] = None) -> StateGraph:
+    def create_graph(self) -> StateGraph:
+        if self.parallel:
+            return self._create_parallel_graph_(
+                include_planner=self.include_planner,
+                include_planner_summary=self.include_planner_summary,
+                tools=self.tools,
+                max_parallel=self.max_parallel,
+            )
+        else:
+            return self._create_simple_graph_(include_planner=self.include_planner, tools=self.tools)
+
+    def _create_simple_graph_(self, include_planner: bool = False, tools: Optional[list] = None) -> StateGraph:
         workflow = StateGraph(MessagesState)
 
         # IMPORTANT: LLM側にバインドするツールと、ToolNode側で実行可能なツールは必ず一致させる。
@@ -714,7 +681,7 @@ class ParallelAgentWorkflow:
         return workflow
 
 
-    def create_parallel_graph(
+    def _create_parallel_graph_(
         self,
         *,
         include_planner: bool = True,
@@ -758,14 +725,10 @@ class ParallelAgentWorkflow:
                 return "join"
             # NOTE:
             # Send() の payload は worker 側 state として渡されるため、
-            # 共有コンテキスト（source_dir/zip_path）が欠落すると executor が /workspace を準備できない。
+            # 共有コンテキスト（source_dirs）が欠落すると executor が /workspace を準備できない。
             shared: Dict[str, Any] = {}
-            if state.get("source_dir") is not None:
-                shared["source_dir"] = state.get("source_dir")
             if state.get("source_dirs") is not None:
                 shared["source_dirs"] = state.get("source_dirs")
-            if state.get("zip_path") is not None:
-                shared["zip_path"] = state.get("zip_path")
             if state.get("trace_id") is not None:
                 shared["trace_id"] = state.get("trace_id")
             # 対話制御（HITL）を worker にも伝播する
@@ -791,16 +754,12 @@ class ParallelAgentWorkflow:
                 f"[元の依頼]\n{original_request}\n"
             )
 
-            source_dir = state.get("source_dir")
             source_dirs = state.get("source_dirs")
-            zip_path = state.get("zip_path")
             auto_approve = bool(state.get("auto_approve"))
             trace_id = state.get("trace_id")
 
             workspace_path = None
-            if source_dir is not None:
-                workspace_path = str(source_dir.resolve())
-            elif isinstance(source_dirs, list) and source_dirs:
+            if isinstance(source_dirs, list) and source_dirs:
                 workspace_path = str(source_dirs[0].resolve())
 
             # ツール選択（ローカル優先、次にzip、最後に通常）
@@ -811,8 +770,6 @@ class ParallelAgentWorkflow:
                 tool = tools_by_name["run_executor_local_hitl"]
                 if source_dirs is not None:
                     tool_args["source_dirs"] = [str(p) for p in source_dirs]
-                elif source_dir is not None:
-                    tool_args["source_dir"] = str(source_dir)
                 tool_args["timeout"] = 600
                 if trace_id:
                     tool_args["trace_id"] = trace_id
@@ -821,8 +778,6 @@ class ParallelAgentWorkflow:
                 tool = tools_by_name["run_executor_local"]
                 if source_dirs is not None:
                     tool_args["source_dirs"] = [str(p) for p in source_dirs]
-                elif source_dir is not None:
-                    tool_args["source_dir"] = str(source_dir)
                 tool_args["timeout"] = 600
                 if trace_id:
                     tool_args["trace_id"] = trace_id
@@ -831,7 +786,7 @@ class ParallelAgentWorkflow:
                 if not workspace_path:
                     raise RuntimeError(
                         "workspace_path is required for run_autonomous_agent_executor. "
-                        "Provide source_dir/source_dirs (shared workspace) in the workflow state."
+                        "Provide source_dirs (shared workspace) in the workflow state."
                     )
                 tool_args["workspace_path"] = workspace_path
                 tool_args["timeout"] = 600

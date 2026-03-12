@@ -13,6 +13,7 @@ from fastmcp import FastMCP, Context
 from ..core.endopoint import EndPoint
 from ...common.request_headers import RequestHeaders, bind_current_request_headers
 
+default_port = 7101
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(description="Run Autonomous Agent Executor MCP server")
@@ -37,7 +38,7 @@ def parse_args() -> argparse.Namespace:
 		),
 	)
 	parser.add_argument("--host", type=str, default="0.0.0.0", help="Bind host for sse/http")
-	parser.add_argument("-p", "--port", type=int, default=5001, help="Bind port for sse/http")
+	parser.add_argument("-p", "--port", type=int, default=default_port, help="Bind port for sse/http")
 	parser.add_argument(
 		"-v",
 		"--log_level",
@@ -68,7 +69,7 @@ def _normalize_tool_name(name: str) -> str:
 
 
 def prepare_mcp(mcp: FastMCP, tools_option: str, sync_mode: bool) -> None:
-	def header_aware_tool(mcp_instance: FastMCP):
+	def header_aware_tool(mcp_instance: FastMCP, *, tool_name: str):
 		def decorator(func):
 			@wraps(func)
 			async def wrapper(*args, **kwargs):
@@ -84,6 +85,10 @@ def prepare_mcp(mcp: FastMCP, tools_option: str, sync_mode: bool) -> None:
 				with bind_current_request_headers(headers_obj):
 					return await func(*args, **kwargs)
 
+			# IMPORTANT: Expose stable tool names expected by clients
+			# (e.g. client calls "execute" while underlying implementation may be "execute_async").
+			wrapper.__name__ = tool_name
+
 			sig = inspect.signature(func)
 			params = list(sig.parameters.values())
 			if "context" not in [p.name for p in params]:
@@ -93,7 +98,7 @@ def prepare_mcp(mcp: FastMCP, tools_option: str, sync_mode: bool) -> None:
 						inspect.Parameter.KEYWORD_ONLY,
 						annotation=Context,
 						default=None,
-					)
+						)
 				)
 			setattr(wrapper, "__signature__", sig.replace(parameters=params))
 			return mcp_instance.tool()(wrapper)
@@ -107,8 +112,6 @@ def prepare_mcp(mcp: FastMCP, tools_option: str, sync_mode: bool) -> None:
 		"cancel": EndPoint.cancel,
 	}
 
-	tool_decorator = header_aware_tool(mcp)
-
 	if tools_option:
 		selected = [_normalize_tool_name(t) for t in tools_option.split(",")]
 		missing = [t for t in selected if t and t not in tool_registry]
@@ -119,11 +122,11 @@ def prepare_mcp(mcp: FastMCP, tools_option: str, sync_mode: bool) -> None:
 		for t in selected:
 			if not t:
 				continue
-			tool_decorator(tool_registry[t])
+			header_aware_tool(mcp, tool_name=t)(tool_registry[t])
 		return
 
-	for fn in tool_registry.values():
-		tool_decorator(fn)
+	for name, fn in tool_registry.items():
+		header_aware_tool(mcp, tool_name=name)(fn)
 
 
 async def main() -> None:

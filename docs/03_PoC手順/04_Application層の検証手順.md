@@ -1,11 +1,76 @@
-## 初期段階（BFF抜き）: SV（ホスト実行）での検証
+## 初期段階
+### 自律型エージェントの検証
 
-この手順は「BFFなしで、まずホスト上で一連の流れを成立させる」初期段階を対象にします。
+#### （開発用）MCP（FastMCP）での疎通（BFFなし）
+* BFF抜き、自律型エージェントはサブプロセス、ワークスペースはホスト上のパス、BearerとトレースIDはダミー
+
+目的: MCPサーバとして executor を起動し、テスト用 FastMCP クライアントから `healthz/execute/status/cancel` を呼び出して疎通確認します。
 
 前提:
 - `ai-platform-samplelib` の依存関係が導入済みであること（例: `cd ${AI_PLATFORM_LIB} && uv sync`）
-- LLM 接続設定（例: `LLM_PROVIDER` / `LLM_MODEL` / `LLM_API_KEY` / `LLM_BASE_URL`）が設定済みであること
+- workspace は「ホスト上の絶対パス」を指定すること（例: `/srv/ai_platform/workspaces/...` or `/tmp/...`）
+- Bearer と trace id はダミーでOK（ヘッダ伝搬の疎通確認）
 
+ターミナル1（MCPサーバ起動 / streamable-http）:
+
+```bash
+cd ${AI_PLATFORM_LIB}
+
+# executor の backend は env で選択
+export AI_PLATFORM_TASK_BACKEND=subprocess
+export AI_PLATFORM_SUBPROCESS_COMMAND='bash -lc'
+
+# 既存の 7101/7102 と衝突しない例
+uv run -m ai_platform_samplelib.application.autonomous.mcp.mcp_server \
+	--mode http --host 127.0.0.1 -p 7111
+```
+
+ターミナル2（テスト用 FastMCP クライアント実行）:
+
+```bash
+cd ${AI_PLATFORM_LIB}
+
+workspace_path=/srv/ai_platform/workspaces/ws_mcp_subprocess_1
+mkdir -p "$workspace_path"
+chown -R "$(id -u)":"$(id -g)" "$workspace_path" 2>/dev/null || sudo chown -R "$(id -u)":"$(id -g)" "$workspace_path"
+
+# ツール一覧（任意）
+uv run -m ai_platform_samplelib.application.autonomous._test_.mcp_client \
+	--url http://127.0.0.1:7111/mcp \
+	--list-tools
+
+# healthz（任意）
+uv run -m ai_platform_samplelib.application.autonomous._test_.mcp_client \
+	--url http://127.0.0.1:7111/mcp \
+	--healthz
+
+# execute → status 収束まで待つ（E2E）
+uv run -m ai_platform_samplelib.application.autonomous._test_.mcp_client \
+	--url http://127.0.0.1:7111/mcp \
+	--header 'Authorization: Bearer dummy' \
+	--header 'X-Trace-Id: trace-dummy-001' \
+	--workspace-path "$workspace_path" \
+	--prompt 'sleep 1; echo hello > hello.txt' \
+	--wait --tail 50
+```
+
+キャンセル検証（任意）:
+
+```bash
+uv run -m ai_platform_samplelib.application.autonomous._test_.mcp_client \
+	--url http://127.0.0.1:7111/mcp \
+	--workspace-path "$workspace_path" \
+	--prompt 'sleep 30; echo hello > hello.txt' \
+	--wait --cancel-after 1
+```
+
+NOTE:
+- `bash -lc` の場合、prompt に外側の引用符を付けないでください（例: `--prompt 'sleep 1; echo hello > hello.txt'` はOK）。
+- MCPサーバ側のツール名が環境により `execute` ではなく `execute_async/execute_sync` になる場合がありますが、テストクライアント側は自動フォールバックします。
+
+--
+未整備
+--
 ### LangGraphによるSV型エージェント（Textual TUI）
 
 初期段階クライアント（BFF抜き）として、Textual のTUIから HITL（承認/スキップ/一時停止）を操作できます。
@@ -138,12 +203,12 @@ export AI_PLATFORM_TASK_BACKEND=subprocess
 export AI_PLATFORM_SUBPROCESS_COMMAND='bash -lc'
 
 # DoOD bundle とポートが衝突しないよう、開発用は 7102 を推奨
-uv run -m ai_platform_samplelib.application.autonomous.api.api_server -p 7102
+uv run -m ai_platform_samplelib.application.autonomous._api_.api_server -p 7102
 
 # 補足: 同期（テスト用途）で検証したい場合は --sync_mode を付ける
 # - /execute がタスク完了までブロックする
 # - 返却時点で status は exited completed/failed に収束している想定
-uv run -m ai_platform_samplelib.application.autonomous.api.api_server -p 7102 --sync_mode
+uv run -m ai_platform_samplelib.application.autonomous._api_.api_server -p 7102 --sync_mode
 ```
 
 別ターミナルで実行:
