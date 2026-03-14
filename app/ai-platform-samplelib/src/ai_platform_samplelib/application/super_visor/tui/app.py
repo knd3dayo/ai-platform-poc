@@ -4,7 +4,7 @@ import argparse
 import asyncio
 import pathlib
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal
@@ -99,6 +99,7 @@ class _TextualHitlUi(HitlUi):
         self._app.post_message(TaskStartMessage(ctx))
 
     async def choose_action(self, ctx: HitlContext, *, default: HitlAction) -> HitlAction:
+        _ = default
         fut: asyncio.Future[HitlAction] = asyncio.get_running_loop().create_future()
         self._app._pending.action_ctx = ctx
         self._app._pending.action_future = fut
@@ -141,10 +142,11 @@ class SetupScreen(Screen[None]):
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        app = cast("SuperVisorTuiApp", self.app)
         if event.button.id == "run":
-            self.app.action_start_run(resume=False)
+            app.action_start_run(resume=False)
         elif event.button.id == "resume":
-            self.app.action_start_run(resume=True)
+            app.action_start_run(resume=True)
 
 
 class RunScreen(Screen[None]):
@@ -186,7 +188,8 @@ class RunScreen(Screen[None]):
         self.app.pop_screen()
 
     def _set_action(self, action: HitlAction) -> None:
-        fut = self.app._pending.action_future
+        app = cast("SuperVisorTuiApp", self.app)
+        fut = app._pending.action_future
         if fut is not None and not fut.done():
             fut.set_result(action)
 
@@ -200,12 +203,14 @@ class RunScreen(Screen[None]):
         self._set_action("p")
 
     def action_yes(self) -> None:
-        fut = self.app._pending.confirm_future
+        app = cast("SuperVisorTuiApp", self.app)
+        fut = app._pending.confirm_future
         if fut is not None and not fut.done():
             fut.set_result(True)
 
     def action_no(self) -> None:
-        fut = self.app._pending.confirm_future
+        app = cast("SuperVisorTuiApp", self.app)
+        fut = app._pending.confirm_future
         if fut is not None and not fut.done():
             fut.set_result(False)
 
@@ -223,7 +228,7 @@ class SuperVisorTuiApp(App[None]):
 
     def __init__(self, *, initial_message: str = "", initial_source_dirs: str = "", initial_resume: str = "") -> None:
         super().__init__()
-        self._pending = _Pending()
+        self._pending: _Pending = _Pending()
         self._ui = _TextualHitlUi(self)
         self._initial_message = initial_message
         self._initial_source_dirs = initial_source_dirs
@@ -305,7 +310,7 @@ class SuperVisorTuiApp(App[None]):
         for t in msg.tasks:
             lv.append(ListItem(Label(t)))
 
-    def on_prompt_confirm_start(self, msg: PromptConfirmStart) -> None:
+    def on_prompt_confirm_start(self, _msg: PromptConfirmStart) -> None:
         run = self._run_screen()
         if run:
             run.status = "confirm start: y=yes / n=no"
@@ -325,7 +330,7 @@ class SuperVisorTuiApp(App[None]):
         log = run.query_one("#log", RichLog)
         log.write(f"[TaskStart] {msg.ctx.idx+1}/{msg.ctx.total}: {msg.ctx.task}")
 
-    def on_prompt_action(self, msg: PromptAction) -> None:
+    def on_prompt_action(self, _msg: PromptAction) -> None:
         run = self._run_screen()
         if run:
             run.status = "choose action: a=approve / s=skip / p=pause"

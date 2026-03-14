@@ -10,7 +10,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 
-from ...autonomous.model.models import TaskStatus
+from autonomous_agent_util.model.models import TaskStatus
 from ..model.models import jobs_lock, jobs, ServerConfig
 
 

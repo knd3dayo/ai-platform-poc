@@ -18,7 +18,7 @@ from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.graph.message import add_messages
 from langgraph.types import Send
 
-from ...autonomous.model.models import TaskStatus
+from autonomous_agent_util.model.models import TaskStatus
 from ..model.models import ServerConfig, jobs_lock, jobs
 from .utils import JobUtils
 from .agent import LangGraphNodes

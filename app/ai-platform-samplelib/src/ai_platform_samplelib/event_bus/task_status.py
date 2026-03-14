@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Protocol
 
 from pydantic import BaseModel, Field
 
-from ai_platform_samplelib.application.autonomous.model.models import TaskStatus
+from autonomous_agent_util.model.models import TaskStatus
 
 
 class TaskStatusEvent(BaseModel):

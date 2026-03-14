@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterable, List, Optional, Protocol, Tuple
 
 from pydantic import BaseModel, Field
 
-from ai_platform_samplelib.application.autonomous.model.models import TaskStatus
+from autonomous_agent_util.model.models import TaskStatus
 from ai_platform_samplelib.event_bus.task_status import TaskStatusEvent, TaskStatusEventBus
 
 

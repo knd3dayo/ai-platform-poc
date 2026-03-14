@@ -3,11 +3,26 @@ revision = 3
 requires-python = ">=3.11, <=3.13"
 
 [[package]]
+name = "ai-governance-util"
+version = "0.1.0"
+source = { git = "https://github.com/knd3dayo/ai-governance-util#f23f24d0d98a79228104f09f2449ac930353e105" }
+dependencies = [
+    { name = "fastmcp" },
+    { name = "litellm" },
+    { name = "pydantic" },
+    { name = "pytest" },
+    { name = "python-dotenv" },
+    { name = "pyyaml" },
+]
+
+[[package]]
 name = "ai-platform-sample-lib"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "ai-governance-util" },
     { name = "aiosqlite" },
+    { name = "autonomous-agent-util" },
     { name = "docker" },
     { name = "fastapi" },
     { name = "fastmcp" },
@@ -30,7 +45,9 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "ai-governance-util", git = "https://github.com/knd3dayo/ai-governance-util" },
     { name = "aiosqlite" },
+    { name = "autonomous-agent-util", git = "https://github.com/knd3dayo/autonomous-agent-util" },
     { name = "docker" },
     { name = "fastapi" },
     { name = "fastmcp" },
@@ -221,6 +238,32 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6b/6c/c88eac87468c607f88bc24df1f3b31445ee6fc9ba123b09e666adf687cd9/authlib-1.6.8.tar.gz", hash = "sha256:41ae180a17cf672bc784e4a518e5c82687f1fe1e98b0cafaeda80c8e4ab2d1cb", size = 165074, upload-time = "2026-02-14T04:02:17.941Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9b/73/f7084bf12755113cd535ae586782ff3a6e710bfbe6a0d13d1c2f81ffbbfa/authlib-1.6.8-py2.py3-none-any.whl", hash = "sha256:97286fd7a15e6cfefc32771c8ef9c54f0ed58028f1322de6a2a7c969c3817888", size = 244116, upload-time = "2026-02-14T04:02:15.579Z" },
+]
+
+[[package]]
+name = "autonomous-agent-util"
+version = "0.1.0"
+source = { git = "https://github.com/knd3dayo/autonomous-agent-util#67a9b096596d19c50110b1dedfeefdbbd2c68705" }
+dependencies = [
+    { name = "aiosqlite" },
+    { name = "docker" },
+    { name = "fastapi" },
+    { name = "fastmcp" },
+    { name = "langchain-openai" },
+    { name = "langgraph" },
+    { name = "langgraph-checkpoint" },
+    { name = "langgraph-checkpoint-sqlite" },
+    { name = "litellm" },
+    { name = "openai" },
+    { name = "pydantic" },
+    { name = "pytest" },
+    { name = "python-dotenv" },
+    { name = "python-on-whales" },
+    { name = "pyyaml" },
+    { name = "redis" },
+    { name = "tabulate" },
+    { name = "textual" },
+    { name = "uvicorn" },
 ]
 
 [[package]]
