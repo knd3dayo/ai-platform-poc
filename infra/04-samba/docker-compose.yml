@@ -27,13 +27,23 @@ services:
       # docker run -ti --rm --entrypoint create-hash.sh
       # ACCOUNT_foo: "foo:1000:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX:86C156FC198B358CCCF6278D8BD49B6A:[U          ]:LCT-67D8D9B6:"
 
+      ACCOUNT_user1: user1
+      UID_user1: 1000
+      GROUPS_user1: user1
+
       SAMBA_VOLUME_CONFIG_documents: |
         [documents]
+         valid users = user1
          path = /data/documents
-         guest ok = yes
+         guest ok =  no
          browseable = yes
          read only = no
 
     volumes:
       - ${HOME}/data/documents/:/data/documents/
 
+networks:
+  ai_platform_egress:
+    external: true
+  ai_platform_internal:
+    external: true
