@@ -31,16 +31,16 @@ services:
       UID_user1: 1000
       GROUPS_user1: user1
 
-      SAMBA_VOLUME_CONFIG_documents: |
-        [documents]
+      SAMBA_VOLUME_CONFIG_workspace: |
+        [workspace]
          valid users = user1
-         path = /data/documents
+         path = /workspace
          guest ok =  no
          browseable = yes
          read only = no
 
     volumes:
-      - ${HOME}/data/documents/:/data/documents/
+      - ${HOME}/workspace/:/workspace
 
 networks:
   ai_platform_egress:
