@@ -34,13 +34,13 @@ services:
       SAMBA_VOLUME_CONFIG_workspace: |
         [workspace]
          valid users = user1
-         path = /workspace
+         path = /data/workspace
          guest ok =  no
          browseable = yes
          read only = no
 
     volumes:
-      - ${HOME}/workspace/:/workspace
+      - ${HOME}/data/workspace/:/data/workspace
 
 networks:
   ai_platform_egress:

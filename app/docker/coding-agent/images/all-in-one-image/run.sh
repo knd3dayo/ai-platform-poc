@@ -88,7 +88,7 @@ fi
 USER_ID=$(id -u)
 GROUP_ID=$(id -g)
 
-workspace_dir="${WORKSPACE:-./workspace}"
+workspace_dir="${WORKSPACE:-${HOME}/workspace}"
 
 if [ ! -d "$config_dir" ]; then
   echo "Config directory not found: $config_dir" >&2
@@ -104,4 +104,4 @@ if [ "$command" = "opencode" ] && [ "${1:-}" = "web" ]; then
   compose_run_extra_args="--service-ports"
 fi
 
-env WORKSPACE=${WORKSPACE:-./workspace} USER_ID=$USER_ID GROUP_ID=$GROUP_ID docker compose run $compose_run_extra_args --rm $service_name $command $@
+env WORKSPACE=${WORKSPACE:-${HOME}/data/workspace} USER_ID=$USER_ID GROUP_ID=$GROUP_ID docker compose run $compose_run_extra_args --rm $service_name $command $@

@@ -51,13 +51,9 @@ ENV PATH="/home/codeuser/.local/bin/:$PATH"
 
 # 8. アプリケーション用ディレクトリと権限設定
 
-RUN mkdir -p /home/codeuser/app/ai-platform-samplelib
 RUN mkdir -p /home/codeuser/app/mcp
-COPY --chown=codeuser:codeuser ai-platform-samplelib /home/codeuser/app/ai-platform-samplelib
 COPY --chown=codeuser:codeuser mcp /home/codeuser/app/mcp
 RUN chown codeuser:codeuser /home/codeuser/app
-
-RUN cd /home/codeuser/app/ai-platform-samplelib && uv sync --no-dev
 
 # /home/codeuser/app/mcp/*/にMCP用のプロジェクトが配置されているので、
 # entrypoint.sh内でこれらをループしてuv syncすることで、MCPプロジェクトの依存関係も解決されるようにする。

@@ -14,7 +14,7 @@ services:
     ports:
       - "4096:4096"
     volumes:
-      - ${WORKSPACE:-${HOME}/workspace}:/workspace
+      - ${WORKSPACE:-${HOME}/data/workspace}:/workspace
       # Dev convenience: allow iterating on scripts without rebuilding the image.
       - ./init-firewall.sh:/usr/local/bin/init-firewall.sh:ro
       - ./entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
