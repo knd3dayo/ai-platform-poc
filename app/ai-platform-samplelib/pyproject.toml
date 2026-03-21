@@ -31,7 +31,7 @@ authors = [
         "docker",
         "redis>=5.0.0",
         "ai-governance-util @ git+https://github.com/knd3dayo/ai-governance-util",
-        "autonomous-agent-util @ git+https://github.com/knd3dayo/autonomous-agent-util"
+        "ai-chat-util @ git+https://github.com/knd3dayo/ai-chat-util",
     ]
 
     [tool.setuptools.packages.find]

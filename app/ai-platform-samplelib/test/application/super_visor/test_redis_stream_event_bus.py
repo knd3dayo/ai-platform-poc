@@ -1,6 +1,6 @@
 import json
 
-from ai_platform_samplelib.application.autonomous.model.models import TaskStatus
+from autonomous_agent_util.model.models import TaskStatus
 from ai_platform_samplelib.event_bus.redis_stream import (
     RedisStreamConsumer,
     RedisStreamEventBus,

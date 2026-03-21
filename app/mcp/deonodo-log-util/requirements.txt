@@ -1,4 +1,0 @@
-python-dotenv
-pydantic
-# For MCP
-fastmcp

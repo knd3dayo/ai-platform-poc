@@ -1,5 +1,5 @@
 from ai_platform_samplelib.event_bus import get_event_bus, get_in_memory_event_bus
-from ai_platform_samplelib.application.autonomous.model.models import TaskStatus
+from autonomous_agent_util.model.models import TaskStatus
 
 
 def test_in_memory_event_bus_collects_events(monkeypatch):

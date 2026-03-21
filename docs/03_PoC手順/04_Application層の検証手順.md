@@ -35,17 +35,17 @@ mkdir -p "$workspace_path"
 chown -R "$(id -u)":"$(id -g)" "$workspace_path" 2>/dev/null || sudo chown -R "$(id -u)":"$(id -g)" "$workspace_path"
 
 # ツール一覧（任意）
-uv run -m ai_platform_samplelib.application.autonomous._test_.mcp_client \
+uv run -m autonomous_agent_util._test_.mcp_client \
 	--url http://127.0.0.1:7111/mcp \
 	--list-tools
 
 # healthz（任意）
-uv run -m ai_platform_samplelib.application.autonomous._test_.mcp_client \
+uv run -m autonomous_agent_util._test_.mcp_client \
 	--url http://127.0.0.1:7111/mcp \
 	--healthz
 
 # execute → status 収束まで待つ（E2E）
-uv run -m ai_platform_samplelib.application.autonomous._test_.mcp_client \
+uv run -m autonomous_agent_util._test_.mcp_client \
 	--url http://127.0.0.1:7111/mcp \
 	--header 'Authorization: Bearer dummy' \
 	--header 'X-Trace-Id: trace-dummy-001' \
@@ -57,7 +57,7 @@ uv run -m ai_platform_samplelib.application.autonomous._test_.mcp_client \
 キャンセル検証（任意）:
 
 ```bash
-uv run -m ai_platform_samplelib.application.autonomous._test_.mcp_client \
+uv run -m autonomous_agent_util._test_.mcp_client \
 	--url http://127.0.0.1:7111/mcp \
 	--workspace-path "$workspace_path" \
 	--prompt 'sleep 30; echo hello > hello.txt' \

@@ -4,11 +4,11 @@ from typing import AsyncGenerator, Optional
 
 import pytest
 
-from ai_platform_samplelib.application.autonomous.core.abstract_agent_runner import AbstractAgentRunner
-from ai_platform_samplelib.application.autonomous.core.abstract_actions import AbstractActions
-from ai_platform_samplelib.application.autonomous.core.abstract_task_service import AbstractTaskService
-from ai_platform_samplelib.application.autonomous.core.task_manager import TaskManager
-from ai_platform_samplelib.application.autonomous.model.models import TaskStatus
+from autonomous_agent_util.core.abstract_agent_runner import AbstractAgentRunner
+from autonomous_agent_util.core.abstract_actions import AbstractActions
+from autonomous_agent_util.core.abstract_task_service import AbstractTaskService
+from autonomous_agent_util.core.task_manager import TaskManager
+from autonomous_agent_util.model.models import TaskStatus
 
 
 class _DummyActions(AbstractActions):

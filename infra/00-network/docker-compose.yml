@@ -5,8 +5,8 @@ services:
       volumes:
          - ./squid.conf:/etc/squid/squid.conf:ro
       # NOTE: 社内LANからSquidを叩く必要がないなら ports 公開は不要。
-      # ports:
-      #   - "3128:3128"
+      ports:
+         - "3128:3128"
       networks:
          - ai_platform_internal
          - ai_platform_egress

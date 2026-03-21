@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from ai_platform_samplelib.application.super_visor.core.hitl_core import run_integrated_agent_hitl
+from super_visor_agent_util.core.hitl_core import run_integrated_agent_hitl
 
 
 class _UiAutoApprove:
@@ -35,7 +35,7 @@ class _UiAutoApprove:
 
 def test_hitl_uses_mcp_executor_workspace_path(monkeypatch, tmp_path: pathlib.Path) -> None:
     # Avoid hitting the real planner & summarizer; keep test local and deterministic.
-    from ai_platform_samplelib.application.super_visor.core import hitl_core
+    from super_visor_agent_util.core import hitl_core
 
     async def _fake_planner_node(state: Any) -> Any:
         class _Msg:
@@ -75,7 +75,7 @@ def test_hitl_uses_mcp_executor_workspace_path(monkeypatch, tmp_path: pathlib.Pa
             resume_from=None,
             auto_approve=True,
             trace_id="trace-1",
-            ui=_UiAutoApprove(),
+            ui=_UiAutoApprove(), # type: ignore
         )
     )
 
