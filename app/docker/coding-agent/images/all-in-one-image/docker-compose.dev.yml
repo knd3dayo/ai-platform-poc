@@ -1,6 +1,0 @@
-services:
-  all-in-one-code-executor:
-    volumes:
-      # Dev override: allow iterating on scripts without rebuilding the image.
-      - ./init-firewall.sh:/usr/local/bin/init-firewall.sh:ro
-      - ./entrypoint.sh:/usr/local/bin/entrypoint.sh:ro

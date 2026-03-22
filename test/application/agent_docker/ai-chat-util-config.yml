@@ -37,9 +37,9 @@ autonomous_agent_util:
     workspace_root: /home/user/data/autonomous_agent_tasks
     host_projects_root: /home/user/data/workspace/projects
     # executor_allowed_workspace_root: /tmp
-    # workspace_path_rewrites:
-    #   - from: /srv/ai_platform/workspaces
-    #     to: /workspaces
+    workspace_path_rewrites:
+      - from: /home/user/data/workspace
+        to: /workspace
 
   host:
     uid: 1000
