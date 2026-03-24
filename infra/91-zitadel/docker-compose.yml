@@ -2,10 +2,11 @@ services:
   zitadel:
     restart: unless-stopped
     image: ghcr.io/zitadel/zitadel:latest
-    command: start-from-init --masterkey "MasterkeyNeedsToHave32Characters"
+    command: start-from-init --config /zitadel-config.yaml --masterkey "MasterkeyNeedsToHave32Characters"
     environment:
       # See "What's next" to learn about how to serve Zitadel on a different domain or IP.
-      ZITADEL_EXTERNALDOMAIN: zitadel
+      ZITADEL_EXTERNALDOMAIN: localhost
+      ZITADEL_EXTERNALPORT: 8080
 
       # See "What's next" to learn about how to enable TLS.
       ZITADEL_EXTERNALSECURE: false
@@ -36,11 +37,11 @@ services:
       # Activate the login v2 on an installation from scratch.
       # To activate the login v2 on an existing installation, read the "What's next" section.
       ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: true # To use the login v1, set this to false.
-      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI: http://localhost:3001/ui/v2/login/
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI: http://localhost:3000/ui/v2/login/
       # Configure the redirection paths to the login v2.
-      ZITADEL_OIDC_DEFAULTLOGINURLV2: http://localhost:3001/ui/v2/login/login?authRequest=
-      ZITADEL_OIDC_DEFAULTLOGOUTURLV2: http://localhost:3001/ui/v2/login/logout?post_logout_redirect=
-      ZITADEL_SAML_DEFAULTLOGINURLV2: http://localhost:3001/ui/v2/login/login?samlRequest=
+      ZITADEL_OIDC_DEFAULTLOGINURLV2: http://localhost:3000/ui/v2/login/login?authRequest=
+      ZITADEL_OIDC_DEFAULTLOGOUTURLV2: http://localhost:3000/ui/v2/login/logout?post_logout_redirect=
+      ZITADEL_SAML_DEFAULTLOGINURLV2: http://localhost:3000/ui/v2/login/login?samlRequest=
 
       # By configuring a machine, the setup job creates a user of type machine with the role IAM_OWNER.
       # It writes a personal access token (PAT) to the path specified in ZITADEL_FIRSTINSTANCE_PATPATH.
@@ -53,7 +54,7 @@ services:
       # To change the initial human admin users username and password, uncomment the following lines.
       # The first login name is formatted like this: <username>@<org_name>.<external_domain>
       # With the following incommented configuration, this would be root@my-organization.localhost
-      # Visit http://localhost:8081/ui/console to check if the login name works.
+      # Visit http://localhost:8080/ui/console to check if the login name works.
       # If you can't log in, check the available login names:
       # echo "select * from projections.login_names3;" | psql -h localhost -U postgres -d zitadel
       # The postgres users password is postgres.
@@ -62,9 +63,10 @@ services:
       # ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: RootPassword1!
 
       # Enable debug logs
-      # ZITADEL_LOG_LEVEL: debug     
+      ZITADEL_LOG_LEVEL: debug
       # Write Access Logs to stdout.
-      # ZITADEL_LOGSTORE_ACCESS_STDOUT_ENABLED: true
+      ZITADEL_LOGSTORE_ACCESS_STDOUT_ENABLED: true
+      ZITADEL_LOGSTORE_EXECUTION_STDOUT_ENABLED: true
 
     healthcheck:
       test:
@@ -77,19 +79,21 @@ services:
       start_period: 10s
     user: "0"
     volumes:
+      - ./zitadel-config.yaml:/zitadel-config.yaml:ro
       - ${HOME}/data/zitadel:/current-dir:delegated
     ports:
-      - 8081:8081
-      - 3001:3001
+      - 8080:8080
+      - 3000:3000
     networks:
       - ai_platform_internal
+      - ai_platform_egress
 
   login:
     restart: unless-stopped
     image: ghcr.io/zitadel/zitadel-login:latest
-    # If you can't use the network_mode service:zitadel, you can pass the environment variables ZITADEL_API_URL=http://zitadel:8081 and CUSTOM_REQUEST_HEADERS=Host:localhost instead.
+    # If you can't use the network_mode service:zitadel, you can pass the environment variables ZITADEL_API_URL=http://zitadel:8080 and CUSTOM_REQUEST_HEADERS=Host:localhost instead.
     environment:
-      - ZITADEL_API_URL=http://localhost:8081
+      - ZITADEL_API_URL=http://localhost:8080
       - NEXT_PUBLIC_BASE_PATH=/ui/v2/login
       - ZITADEL_SERVICE_USER_TOKEN_FILE=/current-dir/login-client.pat
     network_mode: service:zitadel
@@ -103,4 +107,6 @@ services:
 
 networks:
   ai_platform_internal:
+    external: true
+  ai_platform_egress:
     external: true

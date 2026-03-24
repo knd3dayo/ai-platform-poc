@@ -13,11 +13,13 @@ authors = [
     dependencies = [
         "python-dotenv",
         "pydantic",
+        "PyJWT[crypto]",
         "litellm",
         "pyyaml",
         "openai",
         "fastapi",
         "fastmcp",
+        "httpx",
         "pytest",
         "langgraph",
         "langchain-openai",

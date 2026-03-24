@@ -1,0 +1,24 @@
+Log:
+  Level: debug
+
+Instrumentation:
+  Log:
+    Level: DEBUG
+    Streams:
+      - runtime
+      - ready
+      - request
+      - event_handler
+      - queue
+    Format: text
+    AddSource: true
+    Errors:
+      StackTrace: true
+
+LogStore:
+  Access:
+    Stdout:
+      Enabled: true
+  Execution:
+    Stdout:
+      Enabled: true

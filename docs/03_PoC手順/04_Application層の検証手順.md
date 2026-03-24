@@ -1,4 +1,98 @@
 ## 初期段階
+### Zitadel Bearerトークン連携の検証
+
+目的: クライアントが ZITADEL で OAuth 認証を行って access token を取得し、BFF が Bearer token を受けて検証したうえで下流 backend に転送し、backend 側でも認証・認可に利用できることを確認します。
+
+前提:
+- ZITADEL が `http://localhost:8080` で起動していること
+- service account の Access Token Type が `JWT` であること
+- service account key JSON が利用可能であること
+- `app/ai-platform-samplelib/src/ai_platform_samplelib/oidc/.env` に `OIDC_TEST_APPLICATION_KEY_PATH` が設定済みであること
+
+ターミナル1（backend 起動）:
+
+```bash
+cd /home/user/source/repos/ai-platform-poc/app/ai-platform-samplelib
+PYTHONPATH=src .venv/bin/python -m ai_platform_samplelib.oidc.backend_server --port 5802
+```
+
+ターミナル2（BFF 起動）:
+
+```bash
+cd /home/user/source/repos/ai-platform-poc/app/ai-platform-samplelib
+PYTHONPATH=src .venv/bin/python -m ai_platform_samplelib.oidc.server --port 5801
+```
+
+ターミナル3（client から BFF を呼び出し）:
+
+```bash
+cd /home/user/source/repos/ai-platform-poc/app/ai-platform-samplelib
+
+# Bearer token を取得し、BFF で検証
+PYTHONPATH=src .venv/bin/python -m ai_platform_samplelib.oidc.client --path /protected/me --print-token
+
+# BFF から backend に Bearer token を転送
+PYTHONPATH=src .venv/bin/python -m ai_platform_samplelib.oidc.client --path /protected/forward/backend
+```
+
+期待値:
+- `/protected/me` が `200` を返す
+- `/protected/forward/backend` が `200` を返す
+- backend 側で subject / client_id / audience が取得できる
+
+backend 認可の確認（任意）:
+
+```bash
+access_token=$(PYTHONPATH=src .venv/bin/python - <<'PY'
+import asyncio
+from ai_platform_samplelib.oidc.client import fetch_access_token
+
+async def main():
+	response = await fetch_access_token()
+	print(response['access_token'])
+
+asyncio.run(main())
+PY
+)
+
+curl -sS http://localhost:5802/backend/authorize/client \
+	-H "Authorization: Bearer ${access_token}"
+```
+
+role / custom claim 認可の確認（任意）:
+- `app/ai-platform-samplelib/src/ai_platform_samplelib/oidc/config.yml` の `authorization.required_project_roles` に要求ロールを設定する
+- `authorization.required_claim_values` に必要な custom claim を設定する
+- backend の以下の endpoint で検証する
+  - `/backend/authorize/role`
+  - `/backend/authorize/claims`
+
+ZITADEL 側の設定ポイント:
+- Project で role を作成する
+- Role Assignments で対象 principal に role を付与する
+- Project Settings で role assertion を有効にする
+- 必要に応じて Application Token Settings で User Roles inside ID Token を有効にする
+- custom claim は Actions の complement token flow で追加する
+
+`config.yml` の設定例:
+
+```yaml
+authorization:
+	allowed_client_ids:
+		- login-client
+	required_project_roles:
+		- admin
+	project_role_claim_keys:
+		- urn:zitadel:iam:org:project:roles
+		- urn:zitadel:iam:org:project:365171666990530564:roles
+	required_claim_values:
+		department:
+			- sales
+```
+
+期待値:
+- role claim または custom claim が token に入っていない場合、対応する backend endpoint は `403` を返す
+- 必要な値を満たす token で再実行すると `200` を返す
+
 ### 自律型エージェントの検証
 
 #### （開発用）MCP（FastMCP）での疎通（BFFなし）

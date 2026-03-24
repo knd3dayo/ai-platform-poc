@@ -1,0 +1,45 @@
+zitadel:
+  base_url: http://localhost:8080
+  token_path: /oauth/v2/token
+  jwks_path: /oauth/v2/keys
+  userinfo_path: /oidc/v1/userinfo
+  introspection_path: /oauth/v2/introspect
+  expected_issuer: http://localhost:8080
+  expected_audiences:
+    - "365171666990530564"
+  default_scopes:
+    - openid
+    - profile
+    - "urn:zitadel:iam:org:project:id:365171666990530564:aud"
+
+server:
+  host: 0.0.0.0
+  port: 5801
+  clock_skew_seconds: 30
+
+downstream:
+  backend_base_url: http://localhost:5802
+  backend_path: /backend/whoami
+
+authorization:
+  allowed_client_ids:
+    - login-client
+  required_scopes: []
+  required_project_roles:
+    - admin
+  project_role_claim_keys:
+    - urn:zitadel:iam:org:project:roles
+    - urn:zitadel:iam:org:project:365171666990530564:roles
+  # Example:
+  # required_claim_values:
+  #   department:
+  #     - sales
+  #   feature_flags:
+  #     - beta_user
+  required_claim_values: {}
+
+client:
+  server_base_url: http://localhost:5801
+  request_timeout_seconds: 20
+  verify_tls: true
+  requested_scopes: []
