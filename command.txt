@@ -1,0 +1,1 @@
+opencode run 'get_loaded_config_info を使って現在の設定ファイルの場所を確認してください。その後 coding agent を使って /home/user/source/repos/ai-platform-poc/docs/11_検証/02_コーディングエージェントのMCPサーバー化検証.md を調査し、文書内で重要な見出しを 3 点挙げてください。最後に、設定ファイルの場所と見出し 3 点をまとめて回答してください。'

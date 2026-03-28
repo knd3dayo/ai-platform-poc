@@ -472,6 +472,166 @@ ValueError: Agent with name 'tool_agent' already exists. Agent names must be uni
 - `.env` 全体を `source` する方法は空白を含む値で崩れるため、必要なキーだけを抽出して使う方が安全だった
 - 統合正常系については、現時点では Poc 側の工夫だけでは解消できない既知の実装制約がある
 
+## 再検証結果（2026-03-28, ai-chat-util 修正版適用後）
+
+### 実施日時
+
+- 2026-03-28 17:51 - 17:52
+
+### 実施者
+
+- GitHub Copilot
+
+### 実施条件
+
+- 利用モデル: `gpt-4o` を LiteLLM Proxy 経由で利用
+- ai-chat-util 設定ファイル:
+	- `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml`
+- MCP 設定 JSON:
+	- `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/mcp_servers.local.json`
+- コーディングエージェント実行コマンド: `opencode run`
+- 対象ワークスペース: `/home/user/source/repos/ai-platform-poc`
+- 認証キー: `LLM_API_KEY=sk-poc-master-key-12345` を LiteLLM Proxy の master key として使用
+- 実施プロンプト:
+	- `まず get_loaded_config_info を使って現在の設定ファイルの場所を確認してください。その後 coding agent を使って /home/user/source/repos/ai-platform-poc/docs/11_検証/02_コーディングエージェントのMCPサーバー化検証.md を調査し、文書内で重要な見出しを 3 点挙げてください。最後に、設定ファイルの場所と見出し 3 点をまとめて回答してください。`
+
+### 確認結果
+
+| 項目 | 結果 | 補足 |
+| --- | --- | --- |
+| サブエージェント重複名不具合 | OK | 旧不具合 `Agent with name 'tool_agent' already exists` は再現しなかった |
+| 統合時の MCP サーバー生成 | OK | `coding-agent` と `normal-tools` の両方を同一実行で生成できた |
+| 統合時の通常ツール実行 | OK | `analyze_files` が対象 Markdown 1 件に対して実行完了した |
+| 統合正常系 | NG | `get_loaded_config_info` と `analyze_files` のツール呼び出し上限超過により最終回答が失敗した |
+
+### ログ抜粋
+
+#### 旧不具合の解消確認
+
+```text
+Creating sub-agents...
+Creating code agent for MCP server 'coding-agent'...
+Creating normal agent for MCP server 'normal-tools'...
+Allowed tools:
+- healthz
+- execute
+- status
+- cancel
+- workspace_path
+- get_result
+- get_loaded_config_info
+- analyze_files
+- analyze_pdf_files
+- analyze_image_files
+```
+
+確認できること:
+
+- 旧不具合である `tool_agent` 名の重複エラーは発生しなかった
+- 1 回の supervisor 実行内で `coding-agent` と `normal-tools` の両方をロードできた
+
+#### 新しいブロッカー
+
+```text
+MCP_TOOL_START tool=analyze_files call_id=1 files=1 detail=auto prompt_len=21
+MCP_TOOL_END tool=analyze_files call_id=1 elapsed_ms=4648
+WARNING - Tool call budget exceeded: tool=get_loaded_config_info used=2 limit=2
+WARNING - Tool call budget exceeded: tool=analyze_files used=2 limit=2
+
+申し訳ありません。ツール実行の制限が原因で設定ファイルの場所を確認することができませんでした。また、指定されたMarkdownファイルの調査も行うことができません。
+```
+
+確認できること:
+
+- 統合シナリオは旧不具合の地点を通過し、実際のツール実行フェーズまで到達した
+- ただし、ツール呼び出し回数制限に達すると supervisor が再試行を継続し、最終的に回答生成に失敗した
+- 今回の NG 要因はサブエージェント名衝突ではなく、統合シナリオにおけるツール予算制御である
+
+### 所見
+
+- ai-chat-util 側で修正されたサブエージェント名の一意化は有効であり、旧不具合は解消したと判断できる
+- 統合シナリオは、MCP サーバー群の同時ロードと初回ツール実行までは到達したため、構成上の分離方針自体は成立している
+- 一方で、実運用相当の統合シナリオを安定して完了させるには、`tool_call_limit` の見直し、再試行制御、または supervisor プロンプトの誘導改善が別途必要である
+- 次回の再検証では、ツール上限値を明示調整した条件と、より厳密にツール選択を指示したプロンプト条件を分けて確認するのが妥当である
+
+## 追加確認結果（2026-03-28 18:10, 同一条件での再実行）
+
+同一の Poc 側オーバーレイ設定と MCP 設定 JSON を用いて、統合シナリオを再度実行した。
+
+確認できたこと:
+
+- `coding-agent` と `normal-tools` の同時ロードは再度成功した
+- `tool_agent` 名重複は再発しなかった
+- `normal-tools` 側では `analyze_files` が完了し、その後 `coding-agent` 側で `execute` と `status` まで進んだ
+- ただし `status used=2 limit=2`、`execute used=2 limit=2` で予算超過となり、最終回答は失敗した
+
+ログ抜粋:
+
+```text
+Creating sub-agents...
+Creating code agent for MCP server 'coding-agent'...
+Creating normal agent for MCP server 'normal-tools'...
+
+MCP_TOOL_START tool=analyze_files call_id=1 files=1 detail=auto prompt_len=21
+MCP_TOOL_END tool=analyze_files call_id=1 elapsed_ms=4182
+
+mcp.request {'tool': 'execute', ...}
+mcp.response tool=execute dt_ms=14 result_type=ExecuteResponse
+mcp.request {'tool': 'status', ...}
+mcp.response tool=status dt_ms=0 result_type=TaskStatus
+
+WARNING - Tool call budget exceeded: tool=status used=2 limit=2
+WARNING - Tool call budget exceeded: tool=execute used=2 limit=2
+```
+
+所見:
+
+- `tool_call_limit` の影響は通常ツール側だけでなく、コーディングエージェント側の `execute` / `status` ポーリングにも及んでいる
+- とくに非同期実行型の coding-agent では、`execute` 後に `status` を複数回呼ぶ設計のため、既定値 2 では統合シナリオ完走に不足する可能性が高い
+- そのため、次回の切り分けでは prompt 誘導だけでなく、`features.mcp_tool_call_limit` を明示設定した条件での比較が必要である
+
+## 再テスト結果（2026-03-28 18:20, ai-chat-util チーム対応後）
+
+ai-chat-util チームから共有された以下の修正反映後に、前回と同一の統合シナリオを再実行した。
+
+- `tool_call_limit` の既定値見直し
+- `status`、`get_result`、`workspace_path`、`cancel` など追跡系ツールの budget 分離
+- tool budget 超過時に追加ツール実行を止め、既取得結果で収束させる処理の追加
+
+### 確認できたこと
+
+- `coding-agent` と `normal-tools` の同時ロードは成功した
+- 旧不具合であるサブエージェント名重複は再発しなかった
+- 前回の主因であった `Tool call budget exceeded` は今回のログでは発生しなかった
+- `normal-tools` 側の `analyze_files` は複数回成功し、`coding-agent` 側の `execute` と `status` も実行できた
+- ただし最終的には、supervisor が LLM へ渡す文脈が肥大化し、`ContextWindowExceededError` により失敗した
+
+### ログ抜粋
+
+```text
+Creating sub-agents...
+Creating code agent for MCP server 'coding-agent'...
+Creating normal agent for MCP server 'normal-tools'...
+
+MCP_TOOL_START tool=analyze_files call_id=1 files=1 detail=auto prompt_len=23
+MCP_TOOL_END tool=analyze_files call_id=1 elapsed_ms=3367
+
+mcp.request {'tool': 'execute', ...}
+mcp.response tool=execute dt_ms=5 result_type=ExecuteResponse
+mcp.request {'tool': 'status', ..., 'tail': 200}
+mcp.response tool=status dt_ms=9556 result_type=TaskStatus
+
+ContextWindowExceededError: This model's maximum context length is 128000 tokens.
+However, your messages resulted in 1130419 tokens
+```
+
+### 所見
+
+- ai-chat-util チームの今回の修正により、少なくとも前回の `tool_call_limit` 起因の失敗は解消したと判断できる
+- 一方で、統合シナリオの完走性を阻害する新たなボトルネックとして、supervisor へ戻す情報量の制御不足が顕在化した
+- とくに `coding-agent` の `status` / `get_result` 系応答や、ツール実行結果の履歴をそのまま会話文脈へ積み上げる実装では、複合シナリオで容易にコンテキスト上限へ到達しうる
+- そのため、本件は「budget 超過不具合は解消したが、同一シナリオは別要因でなお未完走」として再オープン候補に該当する
+
 ## 検証結果記入テンプレート
 
 以下のテンプレートに従い、検証条件、確認結果、ログ、所見を記録する。
