@@ -1,0 +1,69 @@
+# ai-chat-util overlay config for ai-platform-poc verification
+#
+# NOTE:
+# - This file is managed from ai-platform-poc.
+# - Do not put secrets here. Use environment variables instead.
+
+ai_chat_util_config:
+  llm:
+    provider: openai
+    timeout_seconds: 60
+    api_key: os.environ/LLM_API_KEY
+    completion_model: gpt-4o
+    embedding_model: text-embedding-3-large
+    base_url: http://localhost:4000
+    api_version: null
+
+  mcp:
+    mcp_config_path: /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/mcp_servers.local.json
+    custom_instructions_file_path: null
+    working_directory: /home/user/source/repos/ai-platform-poc
+    extra_headers: null
+
+    coding_agent_endpoint:
+      mcp_server_name: coding-agent
+
+  features:
+    allow_outside_modifications: false
+    use_custom_pdf_analyzer: false
+    hitl_approval_tools: []
+
+  logging:
+    level: INFO
+    file: null
+
+  network:
+    requests_verify: true
+    ca_bundle: null
+
+  office2pdf:
+    libreoffice_path: null
+
+coding_agent_util:
+  backend:
+    task_backend: process
+
+  monitor:
+    disable_detach_monitor: false
+    detach_monitor_interval: 2.0
+    debug_container: false
+
+  paths:
+    workspace_root: /tmp/coding_agent_tasks
+    host_projects_root: /tmp/coding_agent_projects
+
+  host:
+    uid: null
+    gid: null
+
+  process:
+    command: opencode run
+
+  compose:
+    directory: .
+    file: docker-compose.yml
+    service_name: executor-service
+    command: ""
+
+  logging:
+    level: INFO

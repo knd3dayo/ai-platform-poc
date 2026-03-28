@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "coding-agent": {
+      "type": "stdio",
+      "command": "uv",
+      "env": {
+        "LLM_API_KEY": "sk-poc-master-key-12345"
+      },
+      "args": [
+        "--directory",
+        "/home/user/source/repos/ai-chat-util/app",
+        "run",
+        "-m",
+        "coding_agent_util.mcp.mcp_server",
+        "--config",
+        "/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.coding-only.poc.yml"
+      ]
+    }
+  }
+}
