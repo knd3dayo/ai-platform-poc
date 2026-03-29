@@ -2,8 +2,8 @@
   "cmd": [
     "opencode",
     "run",
-    "Extract important headings from the document located at /home/user/source/repos/ai-platform-poc/docs/11_検証/02_コーディングエージェントのMCPサーバー化検証.md and list three key headings."
+    "docs/11_検証 配下のファイルを調査し、文書の見出しを取得しなさい。"
   ],
-  "timestamp": "2026-03-29T06:30:20.939152+00:00",
+  "timestamp": "2026-03-29T14:59:36.144074+00:00",
   "platform": "linux"
 }

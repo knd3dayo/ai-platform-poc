@@ -1,1 +1,1 @@
-opencode run 'Extract important headings from the document located at /home/user/source/repos/ai-platform-poc/docs/11_検証/02_コーディングエージェントのMCPサーバー化検証.md and list three key headings.'
+opencode run 'docs/11_検証 配下のファイルを調査し、文書の見出しを取得しなさい。'
