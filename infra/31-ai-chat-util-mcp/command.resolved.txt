@@ -1,0 +1,1 @@
+opencode run 'Read the loaded configuration file path.'

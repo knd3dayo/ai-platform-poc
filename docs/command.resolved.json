@@ -1,0 +1,10 @@
+{
+  "cmd": [
+    "opencode",
+    "run",
+    "11_検証/02_コーディングエージェントのMCPサーバー化検証.md の内容から、重要な見出しをMarkdownのままで取得する"
+  ],
+  "cwd": "/home/user/source/repos/ai-platform-poc/docs",
+  "timestamp": "2026-03-29T04:22:51.405397+00:00",
+  "platform": "linux"
+}
