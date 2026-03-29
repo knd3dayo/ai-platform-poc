@@ -5,7 +5,7 @@ data/
 06-denodo/denodo-ai-sdk/denodo-ai-sdk
 src-updated/
 
-langgraph_state.*
+.ai_chat_util/
 
 node_modules/
 work/
