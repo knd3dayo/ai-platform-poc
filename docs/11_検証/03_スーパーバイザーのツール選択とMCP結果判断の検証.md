@@ -425,6 +425,422 @@ Using deterministic evidence response for heading extraction output
 - また、ツール一覧の説明が run によって不完全であり、証跡から利用可能ツール集合を一貫して把握しにくい
 - ai-chat-util チームへは、少なくとも「結果評価系プロンプトで heading extraction fallback が誤発火する点」と「利用可能ツール一覧の露出一貫性」を依頼論点として戻す必要がある
 
+## 再テスト結果（2026-03-30 00:37 - 00:41, 修正版の再確認）
+
+ai-chat-util チームの追加対応後、同一の 4 シナリオと補助的なツール一覧確認を再実行し、前回 NG だった結果評価と追加照会、証跡性の改善状況を確認した。
+
+### 実施日時
+
+- 2026-03-30 00:37 - 00:41
+
+### 実施者
+
+- GitHub Copilot
+
+### 実施条件
+
+- 利用モデル: `gpt-4o` を LiteLLM Proxy 経由で利用
+- Supervisor 実装: `ai-chat-util` の LangChain / LangGraph ベース実装
+- 利用可能ツール一覧の取得方法: supervisor 経由で `--use_mcp` を有効化し、ツール一覧提示プロンプトを実行
+- MCP 設定: `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/mcp_servers.local.json`
+- 設定ファイル: `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml`
+- 対象ワークスペース: `/home/user/source/repos/ai-platform-poc`
+- 実行ランナー: `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/run-ai-chat-util.sh`
+
+### シナリオ別確認結果
+
+| シナリオ | 結果 | 補足 |
+| --- | --- | --- |
+| 通常ツール選択 | NG | 通常ツールで完結すべき問い合わせで `execute` が呼ばれ、`Permission denied: '/mnt/workspace'` が発生した |
+| coding-agent 選択 | OK | docs 配下の Markdown 調査へ委譲し、共通見出し 3 点を返した |
+| 結果評価と追加照会 | OK | 本番投入判断に必要な不足情報と追加確認事項を列挙し、情報不足として返せた |
+| HITL 判定 | OK | ユーザー判断事項を明示したうえで、本番投入可否の前提確認へ誘導できた |
+| 証跡性 | NG | ツール一覧の露出は依然として不完全で、通常ツール選択 NG run でもなぜ `execute` を選んだかの根拠が弱い |
+
+### ログ抜粋
+
+#### 通常ツール選択で新たに観測した退行
+
+```text
+Error calling tool 'execute': [Errno 13] Permission denied: '/mnt/workspace'
+Applied post-close evidence-based fallback from checkpoint writes
+
+設定ファイルの場所: /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml
+```
+
+#### 結果評価と追加照会が改善した run
+
+```text
+現時点で入手した情報では、本番投入判断に足りない可能性があります。以下が不足している情報と追加確認事項です。
+
+### 不足情報
+1. 本番投入に必要な要件一覧
+2. 実施したテストとその結果詳細
+3. 運用上の非技術的側面
+
+### 追加確認すべき事項
+- テスト計画の詳細とその結果
+- 運用手順書
+- 当局のコンプライアンス対応
+```
+
+#### HITL 判定が成立した run
+
+```text
+### 確認事項
+1. LLMプロバイダーのAPIキーが正しく設定されているか（ユーザー判断事項）
+2. MCPサーバーの接続設定が正しいか
+3. 本番環境におけるネットワーク接続の問題
+```
+
+### 確認できること
+
+- 前回 NG だった「結果評価と追加照会」は今回改善し、情報不足を前提とした追加確認の提示ができた
+- 一方で、通常ツール選択シナリオに新たな退行が入り、通常問い合わせにもかかわらず `execute` が選ばれて `/mnt/workspace` への書き込みで失敗した
+- HITL 判定は引き続き成立している
+- ツール一覧の説明は依然として `analyze_files` 系を含まず不完全であり、証跡性の問題は残っている
+- 今回の run 群では `Task not found` や `GraphRecursionError` は観測していない
+
+### 所見
+
+- 前回の主要課題だった「結果評価系プロンプトで heading extraction fallback が誤発火する点」は改善した
+- ただし、通常ツール選択における不要な coding-agent 委譲という別の退行が入っており、全体としてはまだ合格に戻せない
+- ai-chat-util チームへは、少なくとも「通常ツール問い合わせで `execute` が誤選択される点」と「利用可能ツール一覧の露出一貫性」の 2 点を戻す必要がある
+
+## 再テスト結果（2026-03-30 12:48 - 12:53, 修正版の再々確認）
+
+ai-chat-util チームの追加対応後、同一の 4 シナリオと補助的なツール一覧確認を再実行し、前回の通常ツール選択退行と証跡性の改善状況を確認した。
+
+### 実施日時
+
+- 2026-03-30 12:48 - 12:53
+
+### 実施者
+
+- GitHub Copilot
+
+### 実施条件
+
+- 利用モデル: `gpt-4o` を LiteLLM Proxy 経由で利用
+- Supervisor 実装: `ai-chat-util` の LangChain / LangGraph ベース実装
+- 利用可能ツール一覧の取得方法: supervisor 経由で `--use_mcp` を有効化し、ツール一覧提示プロンプトを実行
+- MCP 設定: `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/mcp_servers.local.json`
+- 設定ファイル: `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml`
+- 対象ワークスペース: `/home/user/source/repos/ai-platform-poc`
+- 実行ランナー: `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/run-ai-chat-util.sh`
+
+### シナリオ別確認結果
+
+| シナリオ | 結果 | 補足 |
+| --- | --- | --- |
+| 通常ツール選択 | OK | 設定ファイル path と `analyze_files` / `analyze_pdf_files` / `analyze_image_files` を返し、今回の run では不要な `execute` は発生しなかった |
+| coding-agent 選択 | NG | `execute` による委譲自体は行われたが、最終回答が「共通見出し 3 点」ではなく file 列挙型の deterministic fallback へ崩れた |
+| 結果評価と追加照会 | OK | 本番投入判断に必要な不足情報と追加確認事項を列挙し、情報不足として返せた |
+| HITL 判定 | OK | 設定内容と追加確認事項を分けて提示し、ユーザー判断事項を明示できた |
+| 証跡性 | NG | ツール一覧確認では `analyze_files` 系が依然として列挙されず、coding-agent シナリオでは fallback 発火理由は見えるが選択判断の根拠までは弱い |
+
+### ログ抜粋
+
+#### 通常ツール選択が改善した run
+
+```text
+設定ファイルの場所と、利用可能な解析系ツールについて以下の通り確認しました。
+
+### 設定ファイルの場所
+- /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml
+
+### 利用可能な解析系ツール
+1. analyze_files
+2. analyze_pdf_files
+3. analyze_image_files
+```
+
+#### coding-agent シナリオで残った課題
+
+```text
+Supervisor final text did not faithfully reflect successful tool evidence; applying evidence-based fallback
+Using deterministic evidence response from post-close evidence
+
+設定ファイルの場所: /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml
+文書内の重要な見出し:
+## Headings by File
+### File 1: `01_Docker_Proxy環境によるセキュアなコーディングエージェント利用の検証.md`
+### File 2: `02_コーディングエージェントのMCPサーバー化検証.md`
+```
+
+#### 結果評価と追加照会が成立した run
+
+```text
+本番投入判断を行うため、以下の情報を追加で確認することが推奨されます。
+1. 本番投入に必要な要件一覧
+2. 実施したテストとその結果詳細
+3. 運用上の非技術的側面
+```
+
+#### HITL 判定が成立した run
+
+```text
+### 追加で確認すべき点
+1. APIキー設定の確認
+2. ローカルMCPサーバー設定の妥当性確認
+3. ログ出力先の確認
+```
+
+### 確認できること
+
+- 前回退行していた通常ツール選択は今回の run では改善し、期待どおり通常ツールで完結した
+- 結果評価と追加照会、HITL 判定も成立している
+- 一方で coding-agent シナリオは、委譲後の最終回答整形が still unstable で、共通見出し 3 点ではなく file 列挙型 fallback に崩れることがある
+- ツール一覧の露出は一部改善したが、一覧確認専用プロンプトでは `analyze_files` 系が出てこず、一貫性の問題は残っている
+- 今回の run 群では `Task not found`、`GraphRecursionError`、`Permission denied: '/mnt/workspace'` は観測していない
+
+### 所見
+
+- 通常ツール選択の退行は今回の再々確認では解消している
+- 現時点の主な残課題は、coding-agent シナリオで deterministic fallback が期待形式に整形されない点と、利用可能ツール一覧の露出一貫性である
+- ai-chat-util チームへ戻す論点は、「coding-agent 調査結果の最終整形」と「ツール一覧証跡の一貫性」に絞れる
+
+## 再テスト結果（2026-03-30 13:19 - 13:24, 修正版の最終再確認）
+
+ai-chat-util チームの追加対応後、同一の 4 シナリオと補助的なツール一覧確認を再実行し、残課題だった coding-agent 結果整形とツール一覧証跡の一貫性を確認した。
+
+### 実施日時
+
+- 2026-03-30 13:19 - 13:24
+
+### 実施者
+
+- GitHub Copilot
+
+### 実施条件
+
+- 利用モデル: `gpt-4o` を LiteLLM Proxy 経由で利用
+- Supervisor 実装: `ai-chat-util` の LangChain / LangGraph ベース実装
+- 利用可能ツール一覧の取得方法: supervisor 経由で `--use_mcp` を有効化し、ツール一覧提示プロンプトを実行
+- MCP 設定: `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/mcp_servers.local.json`
+- 設定ファイル: `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml`
+- 対象ワークスペース: `/home/user/source/repos/ai-platform-poc`
+- 実行ランナー: `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/run-ai-chat-util.sh`
+
+### シナリオ別確認結果
+
+| シナリオ | 結果 | 補足 |
+| --- | --- | --- |
+| 通常ツール選択 | OK | 設定ファイル path と `analyze_files` / `analyze_pdf_files` / `analyze_image_files` を返した |
+| coding-agent 選択 | OK | docs 配下の Markdown を調査し、共通見出し 3 点を期待形式で返した |
+| 結果評価と追加照会 | OK | 本番投入判断に必要な追加確認事項を列挙し、情報不足として返せた |
+| HITL 判定 | OK | 設定内容と追加確認事項を分けて提示し、ユーザー判断事項を明示できた |
+| 証跡性 | NG | ツール一覧確認専用プロンプトでは依然として `analyze_files` 系が露出せず、通常ツールシナリオと整合しない |
+
+### ログ抜粋
+
+#### coding-agent シナリオが改善した run
+
+```text
+Markdown ファイルを調査し、共通している見出しを以下の3点に整理しました:
+1. `## 実行手順`
+2. `## 検証結果`
+3. `## 今後の課題`
+```
+
+#### 通常ツール選択が成立した run
+
+```text
+MCPツールを使用して確認した現在の設定ファイルの場所は次のとおりです：
+- /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml
+
+利用可能な解析系ツール:
+1. functions.analyze_files
+2. functions.analyze_pdf_files
+3. functions.analyze_image_files
+```
+
+#### 結果評価と追加照会が成立した run
+
+```text
+これらの情報をもとに本番投入判断を行うためには、以下の追加の確認が必要です。
+- MCP設定ファイルの具体的な内容が本番要件を満たしているか
+- 検証文書における実験内容や結果の詳細分析
+- 本番環境でのパフォーマンスやセキュリティの追加検討
+```
+
+#### HITL 判定が成立した run
+
+```text
+### 本番投入可否の判断
+設定は主要項目に問題ないことを確認しました。ただし、本番投入に際して以下の追加確認が必要です。
+
+### 追加確認すべき点
+1. APIキーの管理
+2. ネットワーク設定の確認
+3. 使用許可の確認
+```
+
+### 確認できること
+
+- 残課題だった coding-agent シナリオの最終整形は今回改善し、期待していた「共通見出し 3 点」を返せた
+- 通常ツール選択、結果評価と追加照会、HITL 判定も成立している
+- 一方で、ツール一覧確認専用プロンプトでは `healthz` と `get_loaded_config_info` しか露出せず、通常ツールシナリオで実際に使えた `analyze_files` 系と整合しない
+- 今回の run 群では `Task not found`、`GraphRecursionError`、`Permission denied: '/mnt/workspace'` は観測していない
+
+### 所見
+
+- スーパーバイザーのツール選択、結果評価、HITL 判定という主要動作は、今回の再確認で成立したとみてよい
+- 現時点の残課題は、利用可能ツール一覧の露出一貫性にほぼ絞られる
+- 最終的な論点は「supervisor が認識しているツール集合を、回答またはログでどこまで安定して証跡化できるか」である
+
+## 補足確認（2026-03-30 13:09, ai-chat-util 最新修正版）
+
+上記の再確認後、ai-chat-util 側の最新修正版でツール一覧確認専用プロンプトの整形ロジックが追加されたため、残課題だった「利用可能ツール一覧の露出一貫性」について補足確認を行った。
+
+### 確認方法
+
+- 実行環境: `/home/user/source/repos/ai-chat-util`
+- 設定ファイル: `/home/user/source/repos/ai-chat-util/work/ai-chat-util-config.structured-routing-test.yml`
+- 確認プロンプト: `supervisor が参照した利用可能ツール一覧を、agent 名ごとに教えてください。`
+- 確認対象:
+  - 最終回答本文
+  - 監査ログ `structured-routing-audit.jsonl`
+  - 通常ツールシナリオの通常ログ
+
+### 確認結果
+
+- 最終回答本文では、以下のとおり `tool_agent_general` 配下に `analyze_files` / `analyze_pdf_files` / `analyze_image_files` が欠落なく出力された
+
+```text
+supervisor が参照した利用可能ツール一覧:
+- tool_agent_coding: healthz, execute, status, cancel, workspace_path, get_result
+- tool_agent_general: get_loaded_config_info, analyze_files, analyze_pdf_files, analyze_image_files
+```
+
+- 監査ログの `route_decided.payload.route_tool_catalog` と `tool_catalog_resolved.payload.tool_catalog` でも、同じツール集合が記録された
+- 通常ツールシナリオの通常ログにも `Resolved tool catalog: route=general_tool_agent ...` が出力され、`tool_agent_general` のみが supervisor の可視ツールとして記録された
+
+### 補足所見
+
+- これにより、残課題だった「ツール一覧確認専用プロンプトでは analyze_files 系が露出しない」という不一致は、最新修正版では解消したと判断できる
+- 現時点では、回答本文と監査ログの両方で supervisor が認識した最終 tool catalog を安定して証跡化できている
+- 少なくとも今回確認した範囲では、tool catalog の内部状態と最終回答整形の間で欠落や縮退は観測していない
+
+### 現時点の結論
+
+- スーパーバイザーの主要動作（通常ツール選択、coding-agent 選択、結果評価、HITL 判定）は成立している
+- 追加課題として残っていたツール一覧証跡の一貫性も、ai-chat-util 最新修正版で解消を確認した
+- 現時点では、当初の確認観点に対する主要な blocker は解消済みとみなしてよい
+
+## 再テスト結果（2026-03-30 13:52 - 14:01, 最新修正版の独立再確認）
+
+ai-chat-util チームから「ツール一覧証跡の一貫性も解消済み」との回答を受け、ai-platform-poc 側から同一 5 シナリオを独立に再実行して確認した。
+
+### 実施日時
+
+- 2026-03-30 13:52 - 14:01
+
+### 実施者
+
+- GitHub Copilot
+
+### 実施条件
+
+- 利用モデル: `gpt-4o` を LiteLLM Proxy 経由で利用
+- Supervisor 実装: `ai-chat-util` の LangChain / LangGraph ベース実装
+- 利用可能ツール一覧の取得方法: supervisor 経由で `--use_mcp` を有効化し、ツール一覧提示プロンプトを実行
+- MCP 設定: `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/mcp_servers.local.json`
+- 設定ファイル: `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml`
+- 対象ワークスペース: `/home/user/source/repos/ai-platform-poc`
+- 実行ランナー: `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/run-ai-chat-util.sh`
+
+### シナリオ別確認結果
+
+| シナリオ | 結果 | 補足 |
+| --- | --- | --- |
+| 通常ツール選択 | OK | 設定ファイル path と解析系ツールを返し、`Resolved tool catalog: route=general_tool_agent ... analyze_files, analyze_pdf_files, analyze_image_files` も通常ログに出た |
+| coding-agent 選択 | OK | docs 配下の Markdown を調査し、共通見出し 3 点を返した |
+| 結果評価と追加照会 | OK | 本番投入判断に必要な追加確認事項を列挙し、情報不足として返せた |
+| HITL 判定 | OK | 本番投入前にユーザー判断事項を明示し、追加確認点を返せた |
+| 証跡性 | NG | ツール一覧確認専用プロンプトの最終回答では、依然として `healthz` と `get_loaded_config_info` 中心で、`analyze_files` / `analyze_pdf_files` / `analyze_image_files` が欠落した |
+
+### ログ抜粋
+
+#### 通常ツール選択が成立した run
+
+```text
+Resolved tool catalog: route=general_tool_agent catalog={"tool_agent_names": ["tool_agent_general"], "tool_catalog": [{"agent_name": "tool_agent_general", "tool_names": ["get_loaded_config_info", "analyze_files", "analyze_pdf_files", "analyze_image_files"]}]}
+
+現在読み込まれている設定ファイルの場所は以下の通りです：
+- /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml
+
+利用可能な解析系ツール:
+1. functions.analyze_files
+2. functions.analyze_pdf_files
+3. functions.analyze_image_files
+```
+
+#### coding-agent 選択が成立した run
+
+```text
+Markdown ファイルを調査し、共通している見出しを以下の3点に整理しました:
+1. `## 実行手順`
+2. `## 検証結果`
+3. `## 今後の課題`
+```
+
+#### ツール一覧確認専用プロンプトで残った不一致
+
+```text
+以下は、MCP ツールの名称、説明、および主要な引数を一覧で示します。通常ツールと coding agent 系ツールを分けて整理しました。
+
+### 通常ツール
+1. healthz
+2. get_loaded_config_info
+```
+
+確認できること:
+
+- 通常ツール選択、coding-agent 選択、結果評価、HITL 判定の主要動作は独立再確認でも成立した
+- 一方で、ツール一覧確認専用プロンプトでは `analyze_files` 系の欠落が再現しており、チーム回答どおりの最終本文にはなっていない
+- 通常ログ上の `Resolved tool catalog` には `analyze_files` 系が含まれているため、内部の catalog 解決と最終回答整形の間に不一致が残っている可能性が高い
+- 今回の run 群では `Task not found`、`GraphRecursionError`、`Permission denied: '/mnt/workspace'` は観測していない
+
+### 所見
+
+- 主要な supervisor 動作自体は安定している
+- ただし、当初の最後の残課題だった「ツール一覧証跡の一貫性」は、ai-platform-poc 側の独立再確認ではまだ完全解消とまでは言えない
+- 論点はかなり絞られており、`Resolved tool catalog` の内容をツール一覧確認専用プロンプトの最終回答本文へ欠落なく反映できるか、に集約される
+
+## 補足確認（2026-03-30 14:xx, ai-chat-util チーム提示プロンプトでの照合）
+
+上記の独立再確認では、こちらで独自に用意した「利用可能な MCP ツールの名称、説明、主要な引数を一覧で示してください。通常ツールと coding agent 系ツールを分けて整理してください。」という広めの確認プロンプトを使っていた。
+
+その後、ai-chat-util チームから比較対象として指定された以下の正確なプロンプトで再実行した。
+
+- `supervisor が参照した利用可能ツール一覧を、agent 名ごとに教えてください。`
+
+### 実行コマンド
+
+```bash
+/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/run-ai-chat-util.sh --config /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml chat --use_mcp -p "supervisor が参照した利用可能ツール一覧を、agent 名ごとに教えてください。"
+```
+
+### 出力確認結果
+
+```text
+supervisor が参照した利用可能ツール一覧:
+- tool_agent_coding: healthz, execute, status, cancel, workspace_path, get_result
+- tool_agent_general: get_loaded_config_info, analyze_files, analyze_pdf_files, analyze_image_files
+```
+
+確認できたこと:
+
+- ai-chat-util チームが提示した正確なプロンプトでは、`tool_agent_general` に `analyze_files` / `analyze_pdf_files` / `analyze_image_files` が含まれた状態で最終回答本文に出力された
+- 少なくともこの再現条件では、前回論点になっていた「内部 catalog にはあるが最終回答本文では欠落する」という不一致は再現しなかった
+- したがって、2026-03-30 13:52 - 14:01 の NG は、最新実装の残不具合というより、確認プロンプト差分に起因していた可能性が高い
+
+### 補足所見
+
+- 「supervisor が参照した利用可能ツール一覧」を厳密に確認する用途では、ai-chat-util チーム提示の正確なプロンプトを検証条件として固定した方がよい
+- 一方で、より自由度の高い一覧化依頼では応答整形が変わる可能性が残るため、必要であれば「汎化した一覧要求でも同等の完全性を保つか」は別観点として追加検証対象に切り分ける
+
 ## 検証結果記入テンプレート
 
 ### 実施日時

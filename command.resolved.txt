@@ -1,1 +1,1 @@
-opencode run 'MCPツールでの設定確認と評価作業を行い、本番投入の可否を判断するための前提を確認してください。作業対象は /home/user/source/repos/ai-platform-poc です。'
+opencode run '次に、docs/11_検証 配下を調査してください。'

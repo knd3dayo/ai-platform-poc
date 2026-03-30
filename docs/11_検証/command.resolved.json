@@ -2,9 +2,9 @@
   "cmd": [
     "opencode",
     "run",
-    "docs/11_検証 配下のファイルを調査し、文書の見出しを取得しなさい。"
+    "docs/11_検証 配下を調査し、内容を確認してください。"
   ],
   "cwd": "/home/user/source/repos/ai-platform-poc/docs/11_検証",
-  "timestamp": "2026-03-29T14:59:36.210428+00:00",
+  "timestamp": "2026-03-30T04:21:51.741858+00:00",
   "platform": "linux"
 }
