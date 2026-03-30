@@ -1,0 +1,9 @@
+{
+  "cmd": [
+    "opencode",
+    "run",
+    "Find and list unique headings from all Markdown files under the docs directory. Return 3 common headings if found."
+  ],
+  "timestamp": "2026-03-30T07:18:27.383334+00:00",
+  "platform": "linux"
+}

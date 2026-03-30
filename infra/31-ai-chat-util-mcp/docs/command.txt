@@ -1,0 +1,1 @@
+opencode run 'Find and list unique headings from all Markdown files under the docs directory. Return 3 common headings if found.'

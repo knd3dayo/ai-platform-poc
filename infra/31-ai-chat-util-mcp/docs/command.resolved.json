@@ -1,0 +1,10 @@
+{
+  "cmd": [
+    "opencode",
+    "run",
+    "Find and list unique headings from all Markdown files under the docs directory. Return 3 common headings if found."
+  ],
+  "cwd": "/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/docs",
+  "timestamp": "2026-03-30T07:18:27.457250+00:00",
+  "platform": "linux"
+}

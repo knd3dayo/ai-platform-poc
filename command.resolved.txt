@@ -1,1 +1,9 @@
-opencode run '次に、docs/11_検証 配下を調査してください。'
+opencode run '作業対象は /home/user/source/repos/ai-platform-poc です。必ず coding agent を使って docs/11_検証 配下の Markdown を調査し、共通している見出しを 3 点に整理してください。
+
+Requirements:
+- Investigate only the Markdown files relevant to the user request.
+- Return exactly 3 common headings.
+- Output each heading on its own line in the format: HEADING_LINE_EXACT: <exact Markdown heading line>
+- Do not summarize in a table.
+- Do not paraphrase the heading text.
+- Preserve the exact Markdown heading line from the source files.'
