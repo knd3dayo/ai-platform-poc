@@ -2,9 +2,9 @@
   "cmd": [
     "opencode",
     "run",
-    "作業対象は /home/user/source/repos/ai-platform-poc です。必ず coding agent を使って docs/11_検証 配下の Markdown を調査し、共通している見出しを 3 点に整理してください。\n\nRequirements:\n- Investigate only the Markdown files relevant to the user request.\n- Return exactly 3 common headings.\n- Output each heading on its own line in the format: HEADING_LINE_EXACT: <exact Markdown heading line>\n- Do not summarize in a table.\n- Do not paraphrase the heading text.\n- Preserve the exact Markdown heading line from the source files."
+    "docs/11_検証 配下を調査し、その内容だけで本番投入判断ができるかを確認してください。不足がある場合は不足情報を挙げてください。"
   ],
   "cwd": "/home/user/source/repos/ai-platform-poc",
-  "timestamp": "2026-03-30T11:17:51.541854+00:00",
+  "timestamp": "2026-04-01T16:08:15.643644+00:00",
   "platform": "linux"
 }

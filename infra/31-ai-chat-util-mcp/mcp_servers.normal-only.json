@@ -3,9 +3,6 @@
     "normal-tools": {
       "type": "stdio",
       "command": "uv",
-      "env": {
-        "LLM_API_KEY": "sk-poc-master-key-12345"
-      },
       "args": [
         "--directory",
         "/home/user/source/repos/ai-chat-util/app",

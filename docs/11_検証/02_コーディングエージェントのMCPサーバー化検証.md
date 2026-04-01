@@ -50,7 +50,7 @@ flowchart LR
 
   subgraph mcp_servers["MCP Servers"]
     normal["normal-tools MCP Server<br/>ai_chat_util.mcp.mcp_server"]
-    coding["coding-agent MCP Server<br/>coding_agent_util.mcp.mcp_server"]
+		coding["coding-agent MCP Server<br/>ai_chat_util.agent.coding.mcp.mcp_server"]
   end
 
   subgraph workspace["Workspace"]
@@ -76,7 +76,7 @@ flowchart LR
 | Supervisor | LLM による計画立案、委譲、結果統合 | `ai_chat_util/base/llm/llm_mcp_client_util.py` |
 | サブエージェント分離 | `coding-agent` 用サーバーとそれ以外を分離 | `ai_chat_util/base/llm/agent.py` |
 | 通常ツール MCP サーバー | 設定確認、ファイル解析系ツール公開 | `ai_chat_util/mcp/mcp_server.py` |
-| coding-agent MCP サーバー | `healthz` / `execute` / `status` など公開 | `coding_agent_util/mcp/mcp_server.py` |
+| coding-agent MCP サーバー | `healthz` / `execute` / `status` / `workspace_path` / `get_result` など公開 | `ai_chat_util/agent/coding/mcp/mcp_server.py` |
 | 非秘匿設定 | LLM、MCP、workspace などの設定 | `ai-chat-util-config.yml` |
 | MCP 設定 JSON | スーパーバイザーから接続するサーバー定義 | 任意の JSON ファイル |
 
@@ -112,9 +112,16 @@ flowchart LR
 ```bash
 export AI_CHAT_UTIL_ROOT="/home/user/source/repos/ai-chat-util/app"
 export AI_PLATFORM_POC_ROOT="/home/user/source/repos/ai-platform-poc"
-cd "$AI_CHAT_UTIL_ROOT"
-uv sync
+export AI_CHAT_UTIL_CONFIG="$AI_PLATFORM_POC_ROOT/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml"
+export AI_CHAT_UTIL_RUNNER="$AI_PLATFORM_POC_ROOT/infra/31-ai-chat-util-mcp/run-ai-chat-util.sh"
+
+uv --directory "$AI_CHAT_UTIL_ROOT" sync
 ```
+
+補足:
+
+- coding-agent 実装本体は `ai_chat_util.agent.coding` に統合済みだが、起動は README 記載どおり console script `coding-agent-api` / `coding-agent-mcp` / `coding-agent-util` を使う
+- supervisor 実行時は `run-ai-chat-util.sh` が `.env` から `LITELLM_MASTER_KEY` と `LLM_API_KEY` を読み込み、子プロセスへ環境変数を継承させる
 
 ### 1. ai-chat-util-config.yml を確認する
 
@@ -166,8 +173,7 @@ coding_agent_util:
 				"--directory",
 				"/home/user/source/repos/ai-chat-util/app",
 				"run",
-				"-m",
-				"coding_agent_util.mcp.mcp_server",
+				"coding-agent-mcp",
 				"--config",
 				"/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml"
 			]
@@ -194,6 +200,7 @@ coding_agent_util:
 注意:
 
 - 初回検証では stdio を基準 transport とする
+- 標準構成では parent process の環境変数を子 MCP サーバーが継承するため、JSON に秘密情報を直書きしない
 - child process に秘匿情報を明示的に渡す必要がある環境では、各 server 定義に `env` を追加する
 - 共通ライブラリ側の `ai-chat-util-config.yml` は変更しない
 
@@ -211,6 +218,8 @@ export LLM_API_KEY="$LITELLM_MASTER_KEY"
 ## 検証手順
 
 検証は、設定確認、MCP サーバー単体起動、通常ツール利用、coding-agent 委譲、結果統合の順で進める。前のステップが後続の前提になるため、順番に実施する。
+
+現行の supervisor 実行 CLI は `chat --use_mcp` ではなく `agent_chat` である。以降の手順では `agent_chat` を用いる。
 
 ## 1. 設定読み込みを確認する
 
@@ -231,7 +240,7 @@ export LLM_API_KEY="$LITELLM_MASTER_KEY"
 
 ```bash
 cd "$AI_CHAT_UTIL_ROOT"
-uv run -m coding_agent_util.mcp.mcp_server \
+uv --directory "$AI_CHAT_UTIL_ROOT" run coding-agent-mcp \
 	--config "$AI_CHAT_UTIL_CONFIG" \
 	--mode http \
 	--host 127.0.0.1 \
@@ -242,11 +251,13 @@ uv run -m coding_agent_util.mcp.mcp_server \
 
 - サーバーが起動し、設定ファイルの読み込みエラーが出ない
 - `workspace_root` の書き込みチェックで失敗しない
-- `execute` / `status` / `cancel` などの公開準備が完了する
+- `execute` / `status` / `cancel` / `workspace_path` / `get_result` などの公開準備が完了する
+- http mode の場合は FastMCP の起動ログに `http://127.0.0.1:7101/mcp` が表示される
 
 補足:
 
 - このステップは起動確認用であり、後続の supervisor 連携では stdio 定義を使う
+- `healthz` は MCP ツールとして公開されるもので、HTTP 直叩きの `/healthz` ではない
 
 ## 3. 通常ツールのみの正常系を確認する
 
@@ -255,8 +266,7 @@ uv run -m coding_agent_util.mcp.mcp_server \
 ```bash
 "$AI_CHAT_UTIL_RUNNER" \
 	--config "$AI_CHAT_UTIL_CONFIG" \
-	chat \
-	--use_mcp \
+	agent_chat \
 	-p "必ず MCP ツールで設定情報を確認してから、現在読み込まれている設定ファイルの場所と利用可能な解析系ツールを簡潔に説明してください。"
 ```
 
@@ -273,8 +283,7 @@ uv run -m coding_agent_util.mcp.mcp_server \
 ```bash
 "$AI_CHAT_UTIL_RUNNER" \
 	--config "$AI_CHAT_UTIL_CONFIG" \
-	chat \
-	--use_mcp \
+	agent_chat \
 	-p "作業対象は /home/user/source/repos/ai-platform-poc です。必ず coding agent を使って docs/11_検証 配下の Markdown を調査し、検証ドキュメントで共通している見出しを 3 点に整理してください。"
 ```
 
@@ -291,9 +300,8 @@ uv run -m coding_agent_util.mcp.mcp_server \
 ```bash
 "$AI_CHAT_UTIL_RUNNER" \
 	--config "$AI_CHAT_UTIL_CONFIG" \
-	chat \
-	--use_mcp \
-	-p "作業対象は /home/user/source/repos/ai-platform-poc です。まず MCP ツールで現在の設定情報を確認し、その後 coding agent を使って docs/11_検証 配下を調査し、MCP サーバー化検証ドキュメントで流用できる見出し案を 3 点提案してください。どの情報をどのツールで確認したかも簡潔に示してください。"
+	agent_chat \
+	-p "作業対象は /home/user/source/repos/ai-platform-poc です。まず get_loaded_config_info を使って現在の設定ファイルの場所を確認してください。その後で必ず coding agent を使い、docs/11_検証 配下を調査して、MCP サーバー化検証ドキュメントで流用できる見出しを 3 点だけ挙げてください。最後に、設定ファイルの場所、見出し 3 点、どの情報をどのツールで確認したかをまとめて回答してください。"
 ```
 
 期待結果:
@@ -323,6 +331,72 @@ uv run -m coding_agent_util.mcp.mcp_server \
 - コーディングエージェント MCP サーバー起動ログ
 - 入力したプロンプトと最終回答
 - coding-agent が参照した対象パス、生成した成果物、標準出力の抜粋
+
+## 再テスト結果（2026-04-02 00:32, README反映後の再確認）
+
+ai-chat-util README の更新内容を反映し、PoC 側の MCP 設定と手順書を更新したうえで、現行 CLI / 起動点で正常系を再実行した。
+
+### 実施日時
+
+- 2026-04-02 00:20 - 00:32
+
+### 実施者
+
+- GitHub Copilot
+
+### 実施条件
+
+- 利用モデル: `gpt-4o` を LiteLLM Proxy 経由で利用
+- ai-chat-util 設定ファイル:
+	- `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml`
+- MCP 設定 JSON:
+	- `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/mcp_servers.local.json`
+- supervisor 実行コマンド:
+	- `./infra/31-ai-chat-util-mcp/run-ai-chat-util.sh --config /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml agent_chat -p "..."`
+- coding-agent MCP 起動コマンド:
+	- `uv --directory /home/user/source/repos/ai-chat-util/app run coding-agent-mcp --config /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml --mode http --host 127.0.0.1 --port 7101`
+- コーディングエージェント実行コマンド:
+	- `opencode run`
+- 対象ワークスペース:
+	- `/home/user/source/repos/ai-platform-poc`
+
+### 確認結果
+
+| 項目 | 結果 | 補足 |
+| --- | --- | --- |
+| 設定読み込み確認 | OK | `show_config` で `ai-chat-util-config.poc.yml` が concrete value で返った |
+| coding-agent MCP 起動 | OK | `coding-agent-mcp` が HTTP mode で起動し、FastMCP ログに `http://127.0.0.1:7101/mcp` を確認した |
+| 通常ツール正常系 | OK | `agent_chat` 実行で `route=general_tool_agent`、`get_loaded_config_info` / `analyze_*` 群の tool catalog を確認し、設定ファイル path と解析系ツール一覧を返した |
+| コーディングエージェント委譲 | OK | `route=coding_agent`、`execute` / `status` / `get_result` の呼び出しを確認し、見出し 3 点を返した |
+| 統合正常系 | OK | `route=coding_agent` だが tool catalog に `tool_agent_coding` と `tool_agent_general` の両方が含まれ、最終応答に設定ファイル path と見出し 3 点が統合された |
+
+### ログ抜粋
+
+```text
+2026-04-02 00:21:23,824 - INFO - ... - StreamableHTTP session manager started
+INFO:     Uvicorn running on http://127.0.0.1:7101 (Press CTRL+C to quit)
+
+2026-04-02 00:24:49,275 - INFO - .../mcp_client_util.py - create_workflow - Resolved tool catalog: route=coding_agent catalog={"tool_agent_names": ["tool_agent_coding", "tool_agent_general"], "tool_catalog": [{"agent_name": "tool_agent_coding", "tool_names": ["healthz", "execute", "status", "cancel", "workspace_path", "get_result"]}, {"agent_name": "tool_agent_general", "tool_names": ["get_loaded_config_info"]}]}
+
+設定ファイルの場所: /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml
+文書内の重要な見出し:
+## 検証目的
+## 関連するアーキテクチャ検討文書
+## 検証手順
+```
+
+確認できること:
+
+- PoC 側 JSON は旧 `coding_agent_util.mcp.mcp_server` ではなく `coding-agent-mcp` 起動に置き換わっている
+- 秘密情報は MCP 設定 JSON に直書きせず、親プロセス環境変数の継承で動作する
+- supervisor CLI は現行実装どおり `agent_chat` を使う必要がある
+- coding-agent の stable tool contract と `get_loaded_config_info` を同じ run の tool catalog 上で確認できる
+
+### 所見
+
+- README 更新後の ai-chat-util に対して、PoC 側の検証手順は現行実装へ追随できた
+- 旧手順の `chat --use_mcp` は現行 CLI では無効であり、`agent_chat` への更新が必須だった
+- coding-agent MCP の HTTP mode は `/mcp` を公開する構成であり、`healthz` は MCP ツールとして扱うのが正しい
 
 ## 再テスト結果（2026-03-29 15:39, リセット後の最終確認）
 

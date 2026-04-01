@@ -221,6 +221,8 @@ flowchart TD
 4. シナリオ 4 を実行し、HITL が必要なケースの応答内容を確認する
 5. 各シナリオについて、期待したツール選択、結果評価、最終応答、ログ証跡を比較する
 
+現行の supervisor 実行 CLI は `chat --use_mcp` ではなく `agent_chat` である。また、この検証ではツール選択・結果十分性・監査イベントを観測しやすくするため、`routing_mode: structured`、`sufficiency_check_enabled: true`、`audit_log_enabled: true` を有効化した専用設定を使う。
+
 ## 実行コマンド例
 
 以下は ai-platform-poc 側の検証環境を前提にした実行例である。既存の wrapper を使い、親 CLI 側へ必要な秘匿情報を安全に注入する。
@@ -229,8 +231,11 @@ flowchart TD
 
 ```bash
 export AI_CHAT_UTIL_RUNNER="/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/run-ai-chat-util.sh"
-export AI_CHAT_UTIL_CONFIG="/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml"
+export AI_CHAT_UTIL_CONFIG="/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.poc.yml"
+export AUDIT_LOG_PATH="/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/work/structured-routing-audit.jsonl"
 export TARGET_WORKSPACE="/home/user/source/repos/ai-platform-poc"
+
+rm -f "$AUDIT_LOG_PATH"
 ```
 
 ### 1. 利用可能ツール一覧の確認
@@ -238,8 +243,7 @@ export TARGET_WORKSPACE="/home/user/source/repos/ai-platform-poc"
 ```bash
 "$AI_CHAT_UTIL_RUNNER" \
   --config "$AI_CHAT_UTIL_CONFIG" \
-  chat \
-  --use_mcp \
+  agent_chat \
   -p "supervisor が参照した利用可能ツール一覧を、agent 名ごとに教えてください。"
 ```
 
@@ -253,8 +257,7 @@ export TARGET_WORKSPACE="/home/user/source/repos/ai-platform-poc"
 ```bash
 "$AI_CHAT_UTIL_RUNNER" \
   --config "$AI_CHAT_UTIL_CONFIG" \
-  chat \
-  --use_mcp \
+  agent_chat \
   -p "必ず MCP ツールで設定情報を確認してから、現在読み込まれている設定ファイルの場所と利用可能な解析系ツールを簡潔に説明してください。"
 ```
 
@@ -268,8 +271,7 @@ export TARGET_WORKSPACE="/home/user/source/repos/ai-platform-poc"
 ```bash
 "$AI_CHAT_UTIL_RUNNER" \
   --config "$AI_CHAT_UTIL_CONFIG" \
-  chat \
-  --use_mcp \
+  agent_chat \
   -p "作業対象は $TARGET_WORKSPACE です。必ず coding agent を使って docs/11_検証 配下の Markdown を調査し、共通している見出しを 3 点に整理してください。"
 ```
 
@@ -283,8 +285,7 @@ export TARGET_WORKSPACE="/home/user/source/repos/ai-platform-poc"
 ```bash
 "$AI_CHAT_UTIL_RUNNER" \
   --config "$AI_CHAT_UTIL_CONFIG" \
-  chat \
-  --use_mcp \
+  agent_chat \
   -p "作業対象は $TARGET_WORKSPACE です。まず MCP ツールで現在の設定情報を確認し、その後 coding agent を使って docs/11_検証 配下を調査してください。この設定と文書だけで本番投入判断に足りるかを答え、足りない場合は不足情報を挙げて必要な追加確認を示してください。"
 ```
 
@@ -298,8 +299,7 @@ export TARGET_WORKSPACE="/home/user/source/repos/ai-platform-poc"
 ```bash
 "$AI_CHAT_UTIL_RUNNER" \
   --config "$AI_CHAT_UTIL_CONFIG" \
-  chat \
-  --use_mcp \
+  agent_chat \
   -p "作業対象は $TARGET_WORKSPACE です。MCP ツールで関連設定を確認したうえで、本番投入してよいか判断してください。判断に必要な前提が不足している場合は、追加で確認すべき点を 3 つまで挙げ、どれがユーザー判断事項かを明示してください。"
 ```
 
@@ -338,6 +338,7 @@ export TARGET_WORKSPACE="/home/user/source/repos/ai-platform-poc"
 ## 取得しておくべき証跡
 
 - 利用可能ツール一覧の取得結果
+- structured routing の監査 JSONL（`$AUDIT_LOG_PATH`）
 - 各シナリオの入力プロンプト
 - 選択されたツール名と呼び出し引数
 - MCP ツールの返却結果
@@ -345,6 +346,203 @@ export TARGET_WORKSPACE="/home/user/source/repos/ai-platform-poc"
 - 追加照会または HITL 判定に至ったログ
 
 これらの証跡は、単に検証結果を保存するためだけでなく、設計へ戻すための入力でもある。特に、ツール選択理由、結果評価の分岐、HITL 判定の理由は [AIエージェントの業務適用を見据えた運用監視基盤（Observability）の検討](../01_アーキテクチャ検討/AIエージェントの業務適用を見据えた運用監視基盤（Observability）の検討.md) における trace_id 中心の証跡設計と接続し、状態管理や interrupt/resume の扱いは [技術課題と対応方針](../01_アーキテクチャ検討/技術課題と対応方針.md) における非同期 HITL、E2E トレース、状態管理の論点へ返して整理する。
+
+
+## 再テスト結果（2026-04-02, structured routing 反映後）
+
+ai-chat-util README の現行仕様に合わせて、supervisor 実行経路を `agent_chat` に更新し、`routing_mode: structured` と監査 JSONL を有効化した専用設定で再テストした。
+
+### 実施日時
+
+- 2026-04-02 01:02 - 01:10
+
+### 実施者
+
+- GitHub Copilot
+
+### 実施条件
+
+- 利用モデル: `gpt-4o` を LiteLLM Proxy 経由で利用
+- 実行ランナー:
+  - `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/run-ai-chat-util.sh`
+- 使用設定ファイル:
+  - `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.poc.yml`
+- MCP 設定:
+  - `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/mcp_servers.local.json`
+- 監査ログ:
+  - `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/work/structured-routing-audit.jsonl`
+- 主な有効化設定:
+  - `routing_mode: structured`
+  - `sufficiency_check_enabled: true`
+  - `audit_log_enabled: true`
+  - `audit_log_path: /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/work/structured-routing-audit.jsonl`
+- 対象ワークスペース:
+  - `/home/user/source/repos/ai-platform-poc`
+
+### シナリオ別確認結果
+
+| シナリオ | 結果 | 補足 |
+| --- | --- | --- |
+| 利用可能ツール一覧の取得 | OK | 出力本文には `tool_agent_coding` と `tool_agent_general` の一覧が返った。structured routing の `route_decided` 自体は `reject` だったが、`tool_catalog_resolved` を使って最終回答が構成された |
+| 通常ツール選択 | OK | 通常ログに `Resolved tool catalog: route=general_tool_agent` が出力され、`get_loaded_config_info` により設定ファイル path と解析系ツール一覧を返した |
+| coding-agent 選択 | OK | 通常ログに `Resolved tool catalog: route=coding_agent` が出力され、見出し 3 点を返した |
+| 結果評価と追加照会 | OK | 本番投入判断は「一部不足あり」と評価し、追加で必要な確認事項を列挙した。見出し抽出ではなく判断結果に収束した |
+| HITL 判定 | OK | `Resolved tool catalog: route=general_tool_agent` を維持しつつ、ユーザー判断事項を含む追加確認点を返した。今回の run では `paused` 応答までは発生していない |
+| 証跡性 | OK | `route_decided`、`tool_catalog_resolved`、`sufficiency_judged`、`final_answer_validated` が監査 JSONL に記録され、通常ログの `Resolved tool catalog` と整合した |
+
+### ログ抜粋
+
+- 利用可能ツール一覧の出力:
+
+  ```text
+  supervisor が参照した利用可能ツール一覧:
+  - tool_agent_coding: healthz, execute, status, cancel, workspace_path, get_result
+  - tool_agent_general: get_loaded_config_info, analyze_files, analyze_pdf_files, analyze_image_files
+  ```
+
+- 通常ツール選択の通常ログ:
+
+  ```text
+  Resolved tool catalog: route=general_tool_agent catalog={"tool_agent_names": ["tool_agent_general"], "tool_catalog": [{"agent_name": "tool_agent_general", "tool_names": ["get_loaded_config_info", "analyze_files", "analyze_pdf_files", "analyze_image_files"]}]}
+  ```
+
+- coding-agent 選択の通常ログ:
+
+  ```text
+  Resolved tool catalog: route=coding_agent catalog={"tool_agent_names": ["tool_agent_coding", "tool_agent_general"], "tool_catalog": [{"agent_name": "tool_agent_coding", "tool_names": ["healthz", "execute", "status", "cancel", "workspace_path", "get_result"]}, {"agent_name": "tool_agent_general", "tool_names": ["get_loaded_config_info"]}]}
+  ```
+
+- 結果評価シナリオの最終出力抜粋:
+
+  ```text
+  ### 本番投入判断できるか → 一部不足あり
+
+  技術的なPoC検証は完了しているが、本番投入判断には以下の情報が不足している:
+  - ペネトレーションテスト結果
+  - 脆弱性スキャン結果
+  - 本番監視項目とアラート定義
+  - バックアップ・リカバリー手順
+  - ロールバック計画
+  ```
+
+- HITL 判定シナリオの最終出力抜粋:
+
+  ```text
+  本番投入前に確認すべき事項
+  1. APIキーの確認（ユーザー判断事項）
+  2. ネットワーク設定の確認
+  3. ログの設定確認（ユーザー判断事項）
+  ```
+
+### 確認できたこと
+
+- README の現行仕様どおり、supervisor 実行 CLI は `chat --use_mcp` ではなく `agent_chat` である
+- `routing_mode: structured` と `audit_log_enabled: true` を有効化すると、通常ログと JSONL の両方で route と tool catalog を追跡できる
+- 通常問い合わせでは `tool_agent_general` のみに catalog が絞られ、coding-agent 系ツールは露出しなかった
+- explicit coding-agent 問い合わせでは `tool_agent_coding` と `tool_agent_general` が同時に catalog へ入り、見出し抽出結果まで収束できた
+- 利用可能ツール一覧の問い合わせだけは `route_decided=reject` になったが、`tool_catalog_resolved` を使った最終回答は成功した
+
+### 所見
+
+- 03 の検証は ai-chat-util の変更影響を受けており、実行手順は `agent_chat` と structured routing 前提へ更新する必要があった
+- 現行実装では、ツール選択・結果十分性・最終回答妥当性を audit JSONL で追えるため、検証の証跡性は以前より高い
+- 一方で、利用可能ツール一覧の問い合わせは route 判定上は `reject` になるため、tool catalog intent の扱いは今後の安定化対象として残る
+
+### ai-chat-util へ返却したい事項
+
+1. `supervisor が参照した利用可能ツール一覧を、agent 名ごとに教えてください。` のような tool catalog intent では、回答本文は正しく返る一方で `route_decided=reject` になる
+2. 実害は小さいが、監査ログ上では unsupported request に見えるため、`tool_catalog_resolved` を返せる問い合わせは `reject` ではなく専用 intent または `general_tool_agent` へ収束した方が観測しやすい
+3. 今回の structured routing 再テストでは、`route_decided=reject` と `final_answer_validated=completed` が同居することを確認したため、回帰候補として切り出してよい
+
+## HITL pause/resume 再テスト結果（2026-04-02, API 経由）
+
+`agent_chat` の CLI だけではプロセスを跨ぐ resume を扱いにくいため、API の `POST /api/ai_chat_util/agent_chat` を用いて `paused` → 承認 → `completed` の往復を確認した。
+
+### 実施日時
+
+- 2026-04-02 08:09 - 08:12
+
+### 実施条件
+
+- API サーバー:
+  - `uv run -m ai_chat_util.api.api_server --config /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.hitl.poc.yml`
+- 使用設定ファイル:
+  - `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.hitl.poc.yml`
+- 追加設定:
+  - `routing_mode: structured`
+  - `sufficiency_check_enabled: true`
+  - `audit_log_enabled: true`
+  - `hitl_approval_tools: ["analyze_files"]`
+- 監査ログ:
+  - `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/work/structured-routing-hitl-audit.jsonl`
+- 対象 trace_id:
+  - `4bf92f3577b34da6a3ce929d0e0e4736`
+
+### 実施内容
+
+1. 初回リクエストで `analyze_files` を明示し、対象 Markdown の要約を要求した
+2. API から `status="paused"` と `hitl.kind="approval"` を受け取った
+3. 同じ `trace_id` に、承認メッセージ `はい、analyze_files の実行を承認します。` を追加して再送した
+4. API から `status="completed"` を受け取り、要約結果が返ることを確認した
+
+### 確認結果
+
+| 項目 | 結果 | 補足 |
+| --- | --- | --- |
+| 初回 pause | OK | `status="paused"`、`hitl.kind="approval"`、`source="supervisor:analyze_files"` を確認 |
+| 承認後 resume | OK | 同一 `trace_id` で再送すると `status="completed"` となり、要約結果が返った |
+| 監査ログ | OK | 初回 run では `sufficiency.approval_required` と `hitl_requested`、resume 後は `tool_selected(analyze_files)`、`tool_result_received`、`final_answer_validated=completed` を確認 |
+
+### API 応答抜粋
+
+- 初回 pause 応答:
+
+  ```json
+  {
+    "status": "paused",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "hitl": {
+      "kind": "approval",
+      "prompt": "analyze_files ツールを使用して、指定された Markdown ファイルを確認し、検証目的を要約しますか？",
+      "source": "supervisor:analyze_files"
+    }
+  }
+  ```
+
+- resume 後の完了応答:
+
+  ```json
+  {
+    "status": "completed",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "hitl": null
+  }
+  ```
+
+### 監査ログ抜粋
+
+```text
+event_type=hitl_requested
+reason_code=hitl.tool_approval_requested
+payload={"kind":"approval","source":"supervisor:analyze_files"}
+
+event_type=tool_selected
+tool_name=analyze_files
+approval_status=required
+
+event_type=tool_result_received
+tool_name=analyze_files
+payload={"success":true,"cached":false}
+
+event_type=final_answer_validated
+final_status=completed
+```
+
+### 所見
+
+- `hitl_approval_tools` に `analyze_files` を入れると、structured routing + API 経由で approval pause/resume を安定して再現できた
+- resume は「同じ `trace_id` に承認メッセージを追加して再送する」実装で動作する
+- これにより、03 の検証文書で扱っていた HITL は「質問文を返すだけ」ではなく、実際に `paused` / `completed` の外部契約まで確認済みになった
 
 
 ## 検証結果
