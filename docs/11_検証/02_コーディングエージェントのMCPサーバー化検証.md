@@ -36,7 +36,7 @@
 
 - スーパーバイザー実装が参照する MCP 設定 JSON に、コーディングエージェント用サーバーと通常ツール用サーバーを定義できる
 - `mcp.coding_agent_endpoint.mcp_server_name` と JSON 側の server key を一致させることで、コーディングエージェント用サーバーを正しく切り分けられる
-- `--use_mcp` でスーパーバイザー実行時に、定義した MCP サーバーへ到達できる
+- `agent_chat` でスーパーバイザー実行時に、定義した MCP サーバーへ到達できる
 
 ### 3. 委譲と統合の正常系
 
@@ -73,8 +73,9 @@ flowchart LR
 
 | コンポーネント | 役割 | 実装/設定箇所 |
 | --- | --- | --- |
-| Supervisor | LLM による計画立案、委譲、結果統合 | `ai_chat_util/base/llm/llm_mcp_client_util.py` |
-| サブエージェント分離 | `coding-agent` 用サーバーとそれ以外を分離 | `ai_chat_util/base/llm/agent.py` |
+| Supervisor | LLM による計画立案、委譲、結果統合 | `ai_chat_util/base/agent/agent_client.py` |
+| Supervisor 補助 | route 判定、workflow 構築、証跡処理 | `ai_chat_util/base/agent/agent_client_util.py` |
+| サブエージェント分離 | `coding-agent` 用サーバーとそれ以外を分離 | `ai_chat_util/base/agent/agent_builder.py` |
 | 通常ツール MCP サーバー | 設定確認、ファイル解析系ツール公開 | `ai_chat_util/mcp/mcp_server.py` |
 | coding-agent MCP サーバー | `healthz` / `execute` / `status` / `workspace_path` / `get_result` など公開 | `ai_chat_util/agent/coding/mcp/mcp_server.py` |
 | 非秘匿設定 | LLM、MCP、workspace などの設定 | `ai-chat-util-config.yml` |
@@ -332,7 +333,93 @@ uv --directory "$AI_CHAT_UTIL_ROOT" run coding-agent-mcp \
 - 入力したプロンプトと最終回答
 - coding-agent が参照した対象パス、生成した成果物、標準出力の抜粋
 
+## 再テスト結果（2026-04-03, package 再編後）
+
+ai-chat-util の package 再編後に、現行 CLI / 実装パス / 起動点へ合わせて正常系を再テストした。実装参照パスは `base/llm` 前提から `base/agent` 前提へ読み替えて確認している。
+
+### 実施日時
+
+- 2026-04-03 19:39 - 19:45
+
+### 実施者
+
+- GitHub Copilot
+
+### 実施条件
+
+- 利用モデル: `gpt-4o` を LiteLLM Proxy 経由で利用
+- ai-chat-util 設定ファイル:
+	- `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml`
+- MCP 設定 JSON:
+	- `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/mcp_servers.local.json`
+- supervisor 実行コマンド:
+	- `./infra/31-ai-chat-util-mcp/run-ai-chat-util.sh --config /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml agent_chat -p "..."`
+- coding-agent MCP 起動コマンド:
+	- `uv --directory /home/user/source/repos/ai-chat-util/app run coding-agent-mcp --config /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml --mode http --host 127.0.0.1 --port 7101`
+- コーディングエージェント実行コマンド:
+	- `opencode run`
+- 対象ワークスペース:
+	- `/home/user/source/repos/ai-platform-poc`
+
+### 確認結果
+
+| 項目 | 結果 | 補足 |
+| --- | --- | --- |
+| 設定読み込み確認 | OK | `show_config` で `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml` が concrete value で返った |
+| coding-agent MCP 起動 | OK | HTTP mode で起動し、FastMCP ログに `http://127.0.0.1:7101/mcp` を確認した |
+| 通常ツール正常系 | OK | `route=general_tool_agent`、`tool_agent_general` の tool catalog を確認し、設定ファイル path と解析系ツール一覧を返した |
+| コーディングエージェント委譲 | OK | `route=coding_agent`、`execute` / `status` / `get_result` を確認し、見出し 3 点を返した |
+| 統合正常系 | 一部不足 | `route=coding_agent` で `tool_agent_coding` と `tool_agent_general` の両方を解決できたが、最終回答は deterministic evidence response に収束し、要求していた「どの情報をどのツールで確認したか」の説明までは保持しなかった |
+
+### ログ抜粋
+
+```text
+Executing command: show_config
+{
+	"path": "/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml",
+	"config": {
+		"ai_chat_util_config": {
+			"mcp": {
+				"mcp_config_path": "/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/mcp_servers.local.json",
+				"coding_agent_endpoint": {
+					"mcp_server_name": "coding-agent"
+				}
+			}
+		}
+	}
+}
+
+[04/03/26 08:01:13] INFO     Starting MCP server 'coding_agent_executor' with transport 'streamable-http' on http://127.0.0.1:7101/mcp
+INFO:     Uvicorn running on http://127.0.0.1:7101 (Press CTRL+C to quit)
+
+2026-04-03 19:39:39,456 - INFO - /home/user/source/repos/ai-chat-util/app/src/ai_chat_util/base/agent/agent_client_util.py - create_workflow - Resolved tool catalog: route=general_tool_agent catalog={"tool_agent_names": ["tool_agent_general"], "tool_catalog": [{"agent_name": "tool_agent_general", "tool_names": ["get_loaded_config_info", "analyze_files", "analyze_pdf_files", "analyze_image_files"]}]}
+
+2026-04-03 19:40:29,546 - INFO - /home/user/source/repos/ai-chat-util/app/src/ai_chat_util/base/agent/agent_client_util.py - create_workflow - Resolved tool catalog: route=coding_agent catalog={"tool_agent_names": ["tool_agent_coding", "tool_agent_general"], "tool_catalog": [{"agent_name": "tool_agent_coding", "tool_names": ["healthz", "execute", "status", "cancel", "workspace_path", "get_result"]}, {"agent_name": "tool_agent_general", "tool_names": ["get_loaded_config_info"]}]}
+
+設定ファイルの場所: /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml
+文書内の重要な見出し:
+## 検証目的
+## 関連するアーキテクチャ検討文書
+## 判定基準
+```
+
+確認できること:
+
+- package 再編後も `show_config`、`agent_chat`、`coding-agent-mcp` の起動点は有効である
+- Supervisor の実装中心は `ai_chat_util.base.agent.agent_client.py` と `ai_chat_util.base.agent.agent_client_util.py` へ移っている
+- route 判定と tool catalog は現行実装でも期待どおり追跡できる
+- 統合シナリオでは route と tool catalog は妥当だが、最終回答の整形は evidence fallback に引っ張られるため、ツール別の説明責務までは安定しない
+
+### 所見
+
+- 手順書のコマンド自体は package 再編後も概ね有効だった
+- 実装参照先だけは `base/llm` 前提から `base/agent` 前提へ更新が必要だった
+- 正常系の主要動作は維持されているが、統合シナリオの最終回答品質は部分的に後退している
+- 次段で詰めるべき論点は、統合シナリオにおける evidence fallback と最終回答テンプレートの整合である
+
 ## 再テスト結果（2026-04-02 00:32, README反映後の再確認）
+
+以下は package 再編前の確認結果であり、ログ内の内部パス表記は当時の実装構成に基づく参考情報である。
 
 ai-chat-util README の更新内容を反映し、PoC 側の MCP 設定と手順書を更新したうえで、現行 CLI / 起動点で正常系を再実行した。
 
@@ -399,6 +486,8 @@ INFO:     Uvicorn running on http://127.0.0.1:7101 (Press CTRL+C to quit)
 - coding-agent MCP の HTTP mode は `/mcp` を公開する構成であり、`healthz` は MCP ツールとして扱うのが正しい
 
 ## 再テスト結果（2026-03-29 15:39, リセット後の最終確認）
+
+以下は package 再編前の確認結果であり、ログ内の内部パス表記は当時の実装構成に基づく参考情報である。
 
 検証結果をリセットした状態から、元の正常系プロンプトを使って現在の実装を最終確認した。
 

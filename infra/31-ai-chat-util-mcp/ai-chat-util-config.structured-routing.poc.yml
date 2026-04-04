@@ -28,6 +28,8 @@ ai_chat_util_config:
     use_custom_pdf_analyzer: false
     routing_mode: structured
     routing_confidence_threshold: 0.6
+    enable_deep_agent: true
+    preferred_coding_route: deep_agent
     sufficiency_check_enabled: true
     audit_log_enabled: true
     audit_log_path: /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/work/structured-routing-audit.jsonl

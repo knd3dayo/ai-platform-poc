@@ -1,1 +1,9 @@
-opencode run 'docs/11_検証 配下を調査し、その内容だけで本番投入判断ができるかを確認してください。不足がある場合は不足情報を挙げてください。'
+opencode run '作業対象は /home/user/source/repos/ai-platform-poc です。まず get_loaded_config_info を使って現在の設定ファイルの場所を確認してください。その後で必ず coding agent を使い、docs/11_検証 配下を調査して、MCP サーバー化検証ドキュメントで流用できる見出しを 3 点だけ挙げてください。最後に、設定ファイルの場所、見出し 3 点、どの情報をどのツールで確認したかをまとめて回答してください。
+
+Requirements:
+- Investigate only the Markdown files relevant to the user request.
+- Return exactly 3 common headings.
+- Output each heading on its own line in the format: HEADING_LINE_EXACT: <exact Markdown heading line>
+- Do not summarize in a table.
+- Do not paraphrase the heading text.
+- Preserve the exact Markdown heading line from the source files.'

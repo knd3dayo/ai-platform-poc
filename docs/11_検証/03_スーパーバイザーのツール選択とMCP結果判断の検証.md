@@ -4,7 +4,7 @@
 
 本検証の主目的は、スーパーバイザーが利用可能なツール一覧から適切なツールを選択し、その実行結果がユーザー要求を満たすかどうかを判断しながら、必要に応じて追加の MCP 呼び出しまたは Human In the Loop を行えることを確認することである。
 
-最終的に目指す姿は、スーパーバイザーが全体の実行計画を担い、単純な処理や定型的な処理は通常の MCP ツールへ委譲し、推論、分析、調査のように複数ステップを要する処理はコーディングエージェントへ委譲する構成である。この検証では、そのために必要となる以下の 2 つの中核機能を確認対象とする。
+最終的に目指す姿は、スーパーバイザーが全体の実行計画を担い、単純な処理や定型的な処理は通常の MCP ツールへ委譲し、推論、分析、調査のように複数ステップを要する処理は DeepAgent を優先経路として委譲する構成である。DeepAgent で扱いにくい非同期ジョブ系要求は fallback として coding-agent 経路へ残す。この検証では、そのために必要となる以下の 2 つの中核機能を確認対象とする。
 
 1. スーパーバイザーがツールの名称、説明、引数情報から適切なツールを選択できること
 2. スーパーバイザーが MCP ツールの返却結果を評価し、追加照会、回答生成、HITL のいずれに進むべきか判断できること
@@ -16,11 +16,11 @@
 - [AIエージェントの業務適用を見据えた生成AIアプリケーション層の検討](../01_アーキテクチャ検討/AIエージェントの業務適用を見据えた生成AIアプリケーション層の検討.md)
   - スーパーバイザーによるツール選択、結果評価、追加照会、HITL への分岐は、SV 型の統合ユニットと評価ユニットの責務に直接対応する。
 - [AIエージェントの業務適用を見据えた生成AIツール層の検討](../01_アーキテクチャ検討/AIエージェントの業務適用を見据えた生成AIツール層の検討.md)
-  - 通常 MCP ツールと coding-agent 系ツールを分離し、それぞれの結果をスーパーバイザーが使い分ける構成は、Tool 層の標準化、意味付け、責務分界の具体例である。
+  - 通常 MCP ツール、DeepAgent route、coding-agent fallback を分離し、それぞれの結果をスーパーバイザーが使い分ける構成は、Tool 層の標準化、意味付け、責務分界の具体例である。
 - [AIエージェントの業務適用を見据えた運用監視基盤（Observability）の検討](../01_アーキテクチャ検討/AIエージェントの業務適用を見据えた運用監視基盤（Observability）の検討.md)
   - 「なぜそのツールを選んだか」「なぜ再照会または HITL に進んだか」を追跡できる証跡性は、trace_id を軸にした運用監視の設計と対応する。
 - [AIエージェントの業務適用を見据えた生成AIアーキテクチャ検討](../01_アーキテクチャ検討/AIエージェントの業務適用を見据えた生成AIアーキテクチャ検討.md)
-  - スーパーバイザー、MCP、coding-agent、HITL を含む今回の判断フローが、Application 層、Tool 層、周辺基盤をまたぐ全体像のどこに位置付くかを確認するための上位文書である。
+  - スーパーバイザー、MCP、DeepAgent、coding-agent fallback、HITL を含む今回の判断フローが、Application 層、Tool 層、周辺基盤をまたぐ全体像のどこに位置付くかを確認するための上位文書である。
 - [技術課題と対応方針](../01_アーキテクチャ検討/技術課題と対応方針.md)
   - ツール選択の再現率、HITL 判定、証跡性、状態管理といった論点を、どの技術課題として整理するかを確認する際の参照先である。
 
@@ -39,9 +39,19 @@
 ## 前提
 
 - スーパーバイザーは LangChain / LangGraph ベースで実装する
-- 通常の情報取得系ツールと、複数ステップ実行を担うコーディングエージェント系ツールは分離する
+- 通常の情報取得系ツールと、複数ステップ調査を担う DeepAgent / coding-agent 系経路は分離する
 - ツール情報として最低限、名称、説明、引数スキーマを取得できることを前提とする
 - HITL は「ユーザーへ追加質問する」「承認待ちにする」の両方を含む広義の意味で扱う
+- `agent_chat` を正規の supervisor 実行経路とし、`features.enable_deep_agent: true` および `features.preferred_coding_route: deep_agent` を有効化する
+- DeepAgent route は非同期ジョブ系の `execute` / `status` / `get_result` を使わず、利用可能なファイル系 / MCP ツールだけで完結する前提とする
+- 非同期ジョブ系が必要な場合は fallback として coding-agent 経路を許容する
+
+## DeepAgent 適用時の前提
+
+- DeepAgent route は `deepagents` 追加依存が導入済みであることを前提とする
+- structured routing 検証では `routing_mode: structured`、`sufficiency_check_enabled: true`、`audit_log_enabled: true` に加え、`enable_deep_agent: true` と `preferred_coding_route: deep_agent` を有効化する
+- `coding_agent_endpoint.mcp_server_name` は async task 型の fallback 経路を識別する設定として残す。DeepAgent route 自体は `deep_agent` route として監査ログに記録される
+- DeepAgent route で使えるツールは ai-chat-util 側の allowlist に従うため、PoC では主に `get_loaded_config_info` と `analyze_files` 系を観測対象とする
 
 ## 検証で整理したい論点
 
@@ -95,8 +105,10 @@ flowchart TD
   user["利用者"] --> sv["Supervisor"]
   sv --> selector{"ツール選択"}
   selector --> normal["通常 MCP ツール"]
-  selector --> coding["coding-agent MCP"]
+  selector --> deep["deep_agent route"]
+  selector --> coding["coding_agent route\n(async fallback)"]
   normal --> judge{"結果で十分か"}
+  deep --> judge
   coding --> judge
   judge -->|十分| answer["最終回答"]
   judge -->|不足| reask["追加の MCP 呼び出し"]
@@ -110,8 +122,9 @@ flowchart TD
 - ツール選択と結果評価は別の責務として扱う
 - 「選んで実行する」だけではなく、「結果が足りるかを判断する」段階を明示する
 - 追加質問は MCP 再照会へ戻し、業務判断が必要な場合のみ HITL へ遷移する
+- DeepAgent route を優先しつつ、非同期ジョブ系要求だけを coding-agent fallback に残す
 
-上記の責務分解は、設計文書上では複数の層にまたがる。ツール選択、結果評価、追加照会、HITL への分岐は [AIエージェントの業務適用を見据えた生成AIアプリケーション層の検討](../01_アーキテクチャ検討/AIエージェントの業務適用を見据えた生成AIアプリケーション層の検討.md) における SV 型の統合・評価・監督の役割に対応し、通常ツールと coding-agent 系ツールの使い分けは [AIエージェントの業務適用を見据えた生成AIツール層の検討](../01_アーキテクチャ検討/AIエージェントの業務適用を見据えた生成AIツール層の検討.md) における Tool 層の標準化と責務分界の具体化として読むことができる。
+上記の責務分解は、設計文書上では複数の層にまたがる。ツール選択、結果評価、追加照会、HITL への分岐は [AIエージェントの業務適用を見据えた生成AIアプリケーション層の検討](../01_アーキテクチャ検討/AIエージェントの業務適用を見据えた生成AIアプリケーション層の検討.md) における SV 型の統合・評価・監督の役割に対応し、通常ツール、DeepAgent route、coding-agent fallback の使い分けは [AIエージェントの業務適用を見据えた生成AIツール層の検討](../01_アーキテクチャ検討/AIエージェントの業務適用を見据えた生成AIツール層の検討.md) における Tool 層の標準化と責務分界の具体化として読むことができる。
 
 ## 実装観点ごとの確認ポイント
 
@@ -121,7 +134,8 @@ flowchart TD
 | --- | --- |
 | ツール一覧の取得 | 名称、説明、引数情報をスーパーバイザーが参照できる |
 | 単純問い合わせの選択 | 通常 MCP ツールが選択される |
-| 複数ステップ問い合わせの選択 | coding-agent 系ツールが選択される |
+| 複数ステップ問い合わせの選択 | `deep_agent` route が優先選択される |
+| 非同期ジョブ要求の扱い | `deep_agent` では完結しない場合のみ `coding_agent` fallback に進む |
 | 曖昧問い合わせの扱い | 不適切な即時実行ではなく、確認か追加質問に進める |
 
 ### 結果判断
@@ -153,10 +167,10 @@ flowchart TD
 期待結果:
 
 - 通常 MCP ツールが選択される
-- coding-agent へ不要な委譲をしない
+- `deep_agent` や `coding_agent` への不要な委譲をしない
 - 結果だけで足りる場合はそのまま最終回答へ進む
 
-### シナリオ 2: コーディングエージェントへ委譲すべき問い合わせ
+### シナリオ 2: DeepAgent へ委譲すべき問い合わせ
 
 入力例:
 
@@ -165,9 +179,22 @@ flowchart TD
 
 期待結果:
 
-- coding-agent 系ツールが選択される
-- ワークスペース参照を伴う複数ステップ調査が行われる
+- `deep_agent` route が優先選択される
+- ワークスペース参照を伴う複数ステップ調査が、`analyze_files` 系などのファイル系 / MCP ツールで完結する
 - 実行結果が十分なら最終回答へ進む
+
+### シナリオ 2-b: 非同期ジョブ系が必要で coding-agent fallback へ委譲すべき問い合わせ
+
+入力例:
+
+- 長時間の非同期タスクとして実行し、進捗確認付きで結果を取得してください
+- `execute` / `status` / `get_result` を使う必要がある前提で調査してください
+
+期待結果:
+
+- `deep_agent` route ではなく `coding_agent` route が選択される
+- async task 型の tool contract が必要な場合だけ fallback する
+- fallback 条件がログまたは最終回答から追跡できる
 
 ### シナリオ 3: ツール結果だけでは不足し、追加照会が必要な問い合わせ
 
@@ -216,12 +243,14 @@ flowchart TD
 ## 検証手順
 
 1. 利用可能ツール一覧を取得し、名称、説明、引数情報が確認できる状態にする
-2. シナリオ 1 と 2 を実行し、ツール選択の妥当性を確認する
+2. シナリオ 1、2、必要に応じて 2-b を実行し、ツール選択の妥当性を確認する
 3. シナリオ 3 を実行し、結果評価と追加照会の分岐を確認する
 4. シナリオ 4 を実行し、HITL が必要なケースの応答内容を確認する
 5. 各シナリオについて、期待したツール選択、結果評価、最終応答、ログ証跡を比較する
 
-現行の supervisor 実行 CLI は `chat --use_mcp` ではなく `agent_chat` である。また、この検証ではツール選択・結果十分性・監査イベントを観測しやすくするため、`routing_mode: structured`、`sufficiency_check_enabled: true`、`audit_log_enabled: true` を有効化した専用設定を使う。
+現行の supervisor 実行 CLI は `chat --use_mcp` ではなく `agent_chat` である。また、この検証ではツール選択・結果十分性・監査イベントを観測しやすくするため、`routing_mode: structured`、`sufficiency_check_enabled: true`、`audit_log_enabled: true` に加えて `enable_deep_agent: true`、`preferred_coding_route: deep_agent` を有効化した専用設定を使う。
+
+DeepAgent route は `execute` / `status` / `get_result` を使わないため、複数ステップ調査シナリオでは file 系 / MCP ツールで完結する問い合わせを基本形とする。非同期ジョブ系を要求する場合だけ、fallback として `coding_agent` route の観測を追加する。
 
 ## 実行コマンド例
 
@@ -250,7 +279,7 @@ rm -f "$AUDIT_LOG_PATH"
 確認ポイント:
 
 - スーパーバイザーが参照した最終的な tool catalog を回答またはログで確認できる
-- 通常ツールと coding-agent 系ツールの役割差が読み取れる
+- 通常ツール、`deep_agent` route、必要に応じて `coding_agent` fallback の役割差が読み取れる
 
 ### 2. 通常ツール選択の確認
 
@@ -264,21 +293,35 @@ rm -f "$AUDIT_LOG_PATH"
 確認ポイント:
 
 - `get_loaded_config_info` など通常ツールだけで完結する
-- coding-agent への不要な委譲が起きない
+- `deep_agent` や `coding_agent` への不要な委譲が起きない
 
-### 3. coding-agent 選択の確認
+### 3. DeepAgent 選択の確認
 
 ```bash
 "$AI_CHAT_UTIL_RUNNER" \
   --config "$AI_CHAT_UTIL_CONFIG" \
   agent_chat \
-  -p "作業対象は $TARGET_WORKSPACE です。必ず coding agent を使って docs/11_検証 配下の Markdown を調査し、共通している見出しを 3 点に整理してください。"
+  -p "作業対象は $TARGET_WORKSPACE です。DeepAgent を優先して docs/11_検証 配下の Markdown を調査し、共通している見出しを 3 点に整理してください。非同期ジョブ系の execute/status/get_result は使わずに完結してください。"
 ```
 
 確認ポイント:
 
-- スーパーバイザーが coding-agent 系ツールへ委譲する
-- ワークスペース参照を伴う複数ステップの処理が実行される
+- スーパーバイザーが `deep_agent` route を優先選択する
+- `analyze_files` 系などのファイル系 / MCP ツールを使った複数ステップ調査が実行される
+
+### 3-b. coding-agent fallback の確認
+
+```bash
+"$AI_CHAT_UTIL_RUNNER" \
+  --config "$AI_CHAT_UTIL_CONFIG" \
+  agent_chat \
+  -p "作業対象は $TARGET_WORKSPACE です。非同期ジョブとして実行し、進捗確認を伴って結果を取得してください。execute/status/get_result が必要な前提で docs/11_検証 配下を調査してください。"
+```
+
+確認ポイント:
+
+- `deep_agent` ではなく `coding_agent` route が選択される
+- fallback 条件がログまたは最終回答から読み取れる
 
 ### 4. 結果評価と追加照会の確認
 
@@ -286,7 +329,7 @@ rm -f "$AUDIT_LOG_PATH"
 "$AI_CHAT_UTIL_RUNNER" \
   --config "$AI_CHAT_UTIL_CONFIG" \
   agent_chat \
-  -p "作業対象は $TARGET_WORKSPACE です。まず MCP ツールで現在の設定情報を確認し、その後 coding agent を使って docs/11_検証 配下を調査してください。この設定と文書だけで本番投入判断に足りるかを答え、足りない場合は不足情報を挙げて必要な追加確認を示してください。"
+  -p "作業対象は $TARGET_WORKSPACE です。まず MCP ツールで現在の設定情報を確認し、その後 DeepAgent を優先して docs/11_検証 配下を調査してください。この設定と文書だけで本番投入判断に足りるかを答え、足りない場合は不足情報を挙げて必要な追加確認を示してください。"
 ```
 
 確認ポイント:
@@ -313,7 +356,8 @@ rm -f "$AUDIT_LOG_PATH"
 | シナリオ | プロンプト例 | 主な観察観点 |
 | --- | --- | --- |
 | 通常ツール選択 | `現在読み込まれている設定ファイルの場所と利用可能な解析系ツールを教えてください` | 通常ツールのみで完結するか |
-| coding-agent 選択 | `docs/11_検証 配下を調査し、共通見出しを 3 点に整理してください` | coding-agent へ委譲されるか |
+| DeepAgent 選択 | `DeepAgent を優先して docs/11_検証 配下を調査し、共通見出しを 3 点に整理してください` | `deep_agent` route へ委譲されるか |
+| coding-agent fallback | `execute/status/get_result が必要な前提で docs/11_検証 配下を調査してください` | `coding_agent` fallback に進むか |
 | 結果評価 | `この設定と文書だけで本番投入判断に足りるか` | 情報不足を検知して追加確認に進めるか |
 | HITL 判定 | `本番投入してよいか判断してください。不足していればユーザー判断事項を明示してください` | HITL が必要な条件を説明できるか |
 
@@ -340,6 +384,7 @@ rm -f "$AUDIT_LOG_PATH"
 - 利用可能ツール一覧の取得結果
 - structured routing の監査 JSONL（`$AUDIT_LOG_PATH`）
 - 各シナリオの入力プロンプト
+- `route_decided` の route 名（`general_tool_agent` / `deep_agent` / `coding_agent`）
 - 選択されたツール名と呼び出し引数
 - MCP ツールの返却結果
 - スーパーバイザーの最終回答
@@ -348,7 +393,18 @@ rm -f "$AUDIT_LOG_PATH"
 これらの証跡は、単に検証結果を保存するためだけでなく、設計へ戻すための入力でもある。特に、ツール選択理由、結果評価の分岐、HITL 判定の理由は [AIエージェントの業務適用を見据えた運用監視基盤（Observability）の検討](../01_アーキテクチャ検討/AIエージェントの業務適用を見据えた運用監視基盤（Observability）の検討.md) における trace_id 中心の証跡設計と接続し、状態管理や interrupt/resume の扱いは [技術課題と対応方針](../01_アーキテクチャ検討/技術課題と対応方針.md) における非同期 HITL、E2E トレース、状態管理の論点へ返して整理する。
 
 
-## 再テスト結果（2026-04-02, structured routing 反映後）
+## DeepAgent 版の実施状況
+
+DeepAgent 優先設定への文書・設定反映は完了したが、本ドキュメント執筆時点では DeepAgent 前提の再テスト結果はまだ採取していない。以下の実測結果は、比較用に残している coding-agent 前提の参考値である。
+
+DeepAgent 版で新たに確認すべき観点:
+
+- `features.enable_deep_agent: true` と `features.preferred_coding_route: deep_agent` が読み込まれていること
+- 複数ステップ調査シナリオで `route=deep_agent` が選択されること
+- `tool_catalog_resolved` に `deep_agent` の tool catalog が記録されること
+- 非同期ジョブ要求時のみ `coding_agent` fallback に切り替わること
+
+## 参考: coding-agent 版の再テスト結果（2026-04-02, structured routing 反映後）
 
 ai-chat-util README の現行仕様に合わせて、supervisor 実行経路を `agent_chat` に更新し、`routing_mode: structured` と監査 JSONL を有効化した専用設定で再テストした。
 
@@ -454,7 +510,7 @@ ai-chat-util README の現行仕様に合わせて、supervisor 実行経路を 
 2. 実害は小さいが、監査ログ上では unsupported request に見えるため、`tool_catalog_resolved` を返せる問い合わせは `reject` ではなく専用 intent または `general_tool_agent` へ収束した方が観測しやすい
 3. 今回の structured routing 再テストでは、`route_decided=reject` と `final_answer_validated=completed` が同居することを確認したため、回帰候補として切り出してよい
 
-## HITL pause/resume 再テスト結果（2026-04-02, API 経由）
+## 参考: coding-agent 版の HITL pause/resume 再テスト結果（2026-04-02, API 経由）
 
 `agent_chat` の CLI だけではプロセスを跨ぐ resume を扱いにくいため、API の `POST /api/ai_chat_util/agent_chat` を用いて `paused` → 承認 → `completed` の往復を確認した。
 
@@ -545,7 +601,7 @@ final_status=completed
 - これにより、03 の検証文書で扱っていた HITL は「質問文を返すだけ」ではなく、実際に `paused` / `completed` の外部契約まで確認済みになった
 
 
-## 検証結果
+## 参考: coding-agent 版の検証結果
 
 ### 実施日時
 
