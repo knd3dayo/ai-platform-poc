@@ -1,0 +1,51 @@
+services:
+  nemo-guardrails:
+    restart: always
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nemo-guardrails
+    env_file:
+      - .env
+    environment:
+      MAIN_MODEL_ENGINE: ${MAIN_MODEL_ENGINE:-openai}
+      MAIN_MODEL_BASE_URL: ${MAIN_MODEL_BASE_URL:-http://litellm:4000/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      NEMO_GUARDRAILS_SERVER_ENABLE_CORS: ${NEMO_GUARDRAILS_SERVER_ENABLE_CORS:-true}
+      NEMO_GUARDRAILS_SERVER_ALLOWED_ORIGINS: ${NEMO_GUARDRAILS_SERVER_ALLOWED_ORIGINS:-*}
+      HTTP_PROXY: ${HTTP_PROXY:-http://squid:3128}
+      HTTPS_PROXY: ${HTTPS_PROXY:-http://squid:3128}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,0.0.0.0,litellm,squid,nemo-guardrails,postgres,redis,langfuse-web}
+      http_proxy: ${http_proxy:-http://squid:3128}
+      https_proxy: ${https_proxy:-http://squid:3128}
+      no_proxy: ${no_proxy:-localhost,127.0.0.1,0.0.0.0,litellm,squid,nemo-guardrails,postgres,redis,langfuse-web}
+    volumes:
+      - ./configs:/config:ro
+    ports:
+      - "${NEMO_GUARDRAILS_HOST_PORT:-4080}:8000"
+    command:
+      [
+        "nemoguardrails",
+        "server",
+        "--config=/config",
+        "--default-config-id=content_safety",
+        "--disable-chat-ui",
+        "--port=8000"
+      ]
+    extra_hosts:
+      - "localhost:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/v1/rails/configs"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - ai_platform_internal
+      - ai_platform_egress
+
+networks:
+  ai_platform_egress:
+    external: true
+  ai_platform_internal:
+    external: true
