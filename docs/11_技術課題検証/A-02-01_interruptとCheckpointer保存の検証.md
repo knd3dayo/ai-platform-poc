@@ -49,10 +49,10 @@
 
 | 論点 | 主な実装候補 | 現状評価 |
 | --- | --- | --- |
-| Workflow の `interrupt` 発火 | `/home/user/source/repos/ai-chat-util/app/src/ai_chat_util/workflow/workflow/langgraph_builder.py` | 実装あり |
-| durable workflow 実行 | `/home/user/source/repos/ai-chat-util/app/src/ai_chat_util/workflow/workflow/runner.py`、`/home/user/source/repos/ai-chat-util/app/src/ai_chat_util/core/app.py` | 実装あり |
-| SQLite Checkpointer 作成 | `/home/user/source/repos/ai-chat-util/app/src/ai_chat_util/base/agent/agent_client_util.py` | 実装あり |
-| Workflow の再開メタ情報保存 | `/home/user/source/repos/ai-chat-util/app/src/ai_chat_util/workflow/session_store.py` | 実装あり |
+| Workflow の `interrupt` 発火 | `${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/workflow/workflow/langgraph_builder.py` | 実装あり |
+| durable workflow 実行 | `${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/workflow/workflow/runner.py`、`${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/core/app.py` | 実装あり |
+| SQLite Checkpointer 作成 | `${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/base/agent/agent_client_util.py` | 実装あり |
+| Workflow の再開メタ情報保存 | `${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/workflow/session_store.py` | 実装あり |
 
 補足:
 
@@ -97,7 +97,7 @@
 
 ## 前提条件
 
-- `/home/user/source/repos/ai-chat-util/app` の依存が導入済みであること。
+- `${HOME}/source/repos/ai-chat-util/app` の依存が導入済みであること。
 - `langgraph-checkpoint-sqlite` と `aiosqlite` を含む workflow 実行依存が利用可能であること。
 - WF 型は LangGraph workflow を使う前提とする。
 
@@ -106,14 +106,14 @@
 ### 1. 事前準備
 
 ```bash
-cd /home/user/source/repos/ai-chat-util/app
+cd ${HOME}/source/repos/ai-chat-util/app
 uv sync
 ```
 
 ### 2. workflow interrupt / resume の単体テスト
 
 ```bash
-cd /home/user/source/repos/ai-chat-util/app
+cd ${HOME}/source/repos/ai-chat-util/app
 uv run pytest src/ai_chat_util/workflow/_test_/test_langgraph_workflow.py -q
 ```
 
@@ -126,7 +126,7 @@ uv run pytest src/ai_chat_util/workflow/_test_/test_langgraph_workflow.py -q
 ### 3. Checkpointer 実装の確認
 
 ```bash
-cd /home/user/source/repos/ai-chat-util
+cd ${HOME}/source/repos/ai-chat-util
 grep -RIn "langgraph_checkpoints.sqlite\|AsyncSqliteSaver\|resume_durable_workflow\|WorkflowSessionStore" app/src README_FOR_EXPERTS.md
 ```
 
@@ -150,7 +150,7 @@ grep -RIn "langgraph_checkpoints.sqlite\|AsyncSqliteSaver\|resume_durable_workfl
 実行コマンド:
 
 ```bash
-cd /home/user/source/repos/ai-chat-util/app
+cd ${HOME}/source/repos/ai-chat-util/app
 uv run pytest src/ai_chat_util/workflow/_test_/test_langgraph_workflow.py -q
 ```
 

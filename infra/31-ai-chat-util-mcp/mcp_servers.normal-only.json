@@ -5,12 +5,12 @@
       "command": "uv",
       "args": [
         "--directory",
-        "/home/user/source/repos/ai-chat-util/app",
+        "${HOME}/source/repos/ai-chat-util/app",
         "run",
         "-m",
         "ai_chat_util.mcp.mcp_server",
         "--config",
-        "/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.normal-only.poc.yml",
+        "${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.normal-only.poc.yml",
         "--tools",
         "get_loaded_config_info,analyze_files,analyze_pdf_files,analyze_image_files"
       ]

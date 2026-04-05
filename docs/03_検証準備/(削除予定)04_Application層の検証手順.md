@@ -12,21 +12,21 @@
 ターミナル1（backend 起動）:
 
 ```bash
-cd /home/user/source/repos/ai-platform-poc/app/ai-platform-samplelib
+cd ${HOME}/source/repos/ai-platform-poc/app/ai-platform-samplelib
 PYTHONPATH=src .venv/bin/python -m ai_platform_samplelib.oidc.backend_server --port 5802
 ```
 
 ターミナル2（BFF 起動）:
 
 ```bash
-cd /home/user/source/repos/ai-platform-poc/app/ai-platform-samplelib
+cd ${HOME}/source/repos/ai-platform-poc/app/ai-platform-samplelib
 PYTHONPATH=src .venv/bin/python -m ai_platform_samplelib.oidc.server --port 5801
 ```
 
 ターミナル3（client から BFF を呼び出し）:
 
 ```bash
-cd /home/user/source/repos/ai-platform-poc/app/ai-platform-samplelib
+cd ${HOME}/source/repos/ai-platform-poc/app/ai-platform-samplelib
 
 # Bearer token を取得し、BFF で検証
 PYTHONPATH=src .venv/bin/python -m ai_platform_samplelib.oidc.client --path /protected/me --print-token

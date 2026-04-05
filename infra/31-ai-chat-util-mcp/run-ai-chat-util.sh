@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 POC_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 LITELLM_ENV_FILE="${LITELLM_ENV_FILE:-$POC_ROOT/infra/02-litellm/.env}"
-AI_CHAT_UTIL_ROOT="${AI_CHAT_UTIL_ROOT:-/home/user/source/repos/ai-chat-util/app}"
+AI_CHAT_UTIL_ROOT="${AI_CHAT_UTIL_ROOT:-${HOME}/source/repos/ai-chat-util/app}"
 
 if [[ ! -f "$LITELLM_ENV_FILE" ]]; then
   echo "env file not found: $LITELLM_ENV_FILE" >&2

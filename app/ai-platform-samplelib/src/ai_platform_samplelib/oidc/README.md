@@ -30,7 +30,7 @@
 最低限必要な設定は次です。
 
 ```env
-OIDC_TEST_APPLICATION_KEY_PATH=/home/user/source/repos/ai-platform-poc/infra/91-zitadel/365508380967567366.json
+OIDC_TEST_APPLICATION_KEY_PATH=${HOME}/source/repos/ai-platform-poc/infra/91-zitadel/365508380967567366.json
 ```
 
 ## サーバー構成
@@ -57,7 +57,7 @@ OIDC_TEST_APPLICATION_KEY_PATH=/home/user/source/repos/ai-platform-poc/infra/91-
 作業ディレクトリ:
 
 ```bash
-cd /home/user/source/repos/ai-platform-poc/app/ai-platform-samplelib
+cd ${HOME}/source/repos/ai-platform-poc/app/ai-platform-samplelib
 ```
 
 ### 1. backend を起動

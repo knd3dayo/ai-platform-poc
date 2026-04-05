@@ -18,6 +18,17 @@ DEFAULT_ENV_PATH = BASE_DIR / ".env"
 load_dotenv(DEFAULT_ENV_PATH)
 
 
+def _expand_path(value: str) -> Path:
+    return Path(os.path.expandvars(value)).expanduser()
+
+
+def _path_from_env(env_name: str) -> Path | None:
+    configured = os.getenv(env_name)
+    if not configured:
+        return None
+    return _expand_path(configured)
+
+
 class ZitadelSettings(BaseModel):
     base_url: str
     token_path: str = "/oauth/v2/token"
@@ -127,17 +138,11 @@ class OIDCSettings(BaseModel):
 
     @property
     def application_key_path(self) -> Path | None:
-        configured = os.getenv("OIDC_TEST_APPLICATION_KEY_PATH")
-        if not configured:
-            return None
-        return Path(configured)
+        return _path_from_env("OIDC_TEST_APPLICATION_KEY_PATH")
 
     @property
     def introspection_application_key_path(self) -> Path | None:
-        configured = os.getenv("OIDC_TEST_INTROSPECTION_APPLICATION_KEY_PATH")
-        if not configured:
-            return None
-        return Path(configured)
+        return _path_from_env("OIDC_TEST_INTROSPECTION_APPLICATION_KEY_PATH")
 
     @property
     def application_key(self) -> dict | None:
@@ -197,9 +202,9 @@ class OIDCSettings(BaseModel):
 
 
 def _resolve_config_path() -> Path:
-    configured_path = os.getenv("OIDC_TEST_CONFIG")
-    if configured_path:
-        return Path(configured_path)
+    configured_path = _path_from_env("OIDC_TEST_CONFIG")
+    if configured_path is not None:
+        return configured_path
     return DEFAULT_CONFIG_PATH
 
 

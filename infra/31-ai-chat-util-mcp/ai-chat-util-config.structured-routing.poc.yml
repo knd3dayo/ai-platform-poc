@@ -15,9 +15,9 @@ ai_chat_util_config:
     api_version: null
 
   mcp:
-    mcp_config_path: /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/mcp_servers.local.json
+    mcp_config_path: "${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/mcp_servers.local.json"
     custom_instructions_file_path: null
-    working_directory: /home/user/source/repos/ai-platform-poc
+    working_directory: "${HOME}/source/repos/ai-platform-poc"
     extra_headers: null
 
     coding_agent_endpoint:
@@ -32,7 +32,7 @@ ai_chat_util_config:
     preferred_coding_route: deep_agent
     sufficiency_check_enabled: true
     audit_log_enabled: true
-    audit_log_path: /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/work/structured-routing-audit.jsonl
+    audit_log_path: "${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/work/structured-routing-audit.jsonl"
     hitl_approval_tools: []
 
   logging:

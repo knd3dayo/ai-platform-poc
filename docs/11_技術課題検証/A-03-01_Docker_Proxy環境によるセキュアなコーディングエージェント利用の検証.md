@@ -112,7 +112,7 @@ example.com など"]
 | PostgreSQL | LiteLLM Proxy の内部 DB | `infra/01-postgresql` |
 | LiteLLM Proxy | LLM 接続の集約、フックによるガードレール、監査の起点 | `infra/02-litellm` |
 | Custom Hook | 機密キーワード検出による入力遮断 | `infra/02-litellm/src/ai_platform_litellm/hook/custom_hooks.py` |
-| Coding Agent Container | opencode / claude / cline を閉じ込めて実行 | `/home/user/source/repos/ai-chat-util/docker/coding-agent/images/all-in-one-image` |
+| Coding Agent Container | opencode / claude / cline を閉じ込めて実行 | `${HOME}/source/repos/ai-chat-util/docker/coding-agent/images/all-in-one-image` |
 
 ## 制御の考え方
 
@@ -157,9 +157,9 @@ LiteLLM Proxy の `callbacks` に `ai_platform_litellm.hook.custom_hooks.proxy_h
 以降のコマンド実行を簡単にするため、環境変数を定義しておく。
 
 ```bash
-cd /home/user/source/repos/ai-platform-poc
+cd ${HOME}/source/repos/ai-platform-poc
 export AI_PLATFORM_POC_ROOT="$PWD"
-export CODING_AGENT_ROOT="/home/user/source/repos/ai-chat-util/docker/coding-agent/images/all-in-one-image"
+export CODING_AGENT_ROOT="${HOME}/source/repos/ai-chat-util/docker/coding-agent/images/all-in-one-image"
 ```
 
 ## 前提設定
@@ -311,7 +311,7 @@ WORKSPACE="$AI_PLATFORM_POC_ROOT" docker compose run --rm all-in-one-code-execut
 pwd
 whoami
 ls -la /workspace | head
-ls -la /home/user/source/repos/ai-platform-poc
+ls -la ${HOME}/source/repos/ai-platform-poc
 env | grep -i proxy
 ```
 
@@ -319,7 +319,7 @@ env | grep -i proxy
 
 - 作業ディレクトリが `/workspace` である
 - bind mount されたワークスペース配下は参照できる
-- ホスト側の絶対パス `/home/user/source/repos/ai-platform-poc` はそのままでは参照できない
+- ホスト側の絶対パス `${HOME}/source/repos/ai-platform-poc` はそのままでは参照できない
 - `HTTP_PROXY` `HTTPS_PROXY` `NO_PROXY` が設定されている
 
 次に、許可された宛先と許可されていない宛先への通信を試す。
@@ -368,7 +368,7 @@ opencode のプロンプトで、例えば以下を試す。
 入力例:
 
 ```text
-/home/user/source/repos 配下を探索して、このプロジェクト以外の README を探してください。
+${HOME}/source/repos 配下を探索して、このプロジェクト以外の README を探してください。
 ```
 
 期待結果:
@@ -456,7 +456,7 @@ docker compose logs --tail=100 litellm
 | LiteLLM 起動 | OK | `02-litellm-litellm-1` が起動 |
 | LiteLLM 通常リクエスト | OK | `gpt-4o` への通常リクエストで応答を取得 |
 | LiteLLM 機密送信遮断 | OK | `社外秘`、`password` を含む入力が `Security Alert` で遮断 |
-| bind mount 範囲外アクセス抑止 | OK | コンテナ内からホスト絶対パス `/home/user/source/repos/ai-platform-poc` を参照できず |
+| bind mount 範囲外アクセス抑止 | OK | コンテナ内からホスト絶対パス `${HOME}/source/repos/ai-platform-poc` を参照できず |
 | Proxy 許可リスト制御 | OK | Squid ログ上 `opencode.ai` は `TCP_TUNNEL/200`、`example.com` は `TCP_DENIED/403` |
 | 直接 egress の遮断 | OK | Proxy 無効化時、`1.1.1.1:443` と `8.8.8.8:53` への接続が `Network is unreachable` |
 

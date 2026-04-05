@@ -11,9 +11,9 @@ ai_chat_util_config:
     api_version: null
 
   mcp:
-    mcp_config_path: /home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/mcp_servers.normal-only.json
+    mcp_config_path: "${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/mcp_servers.normal-only.json"
     custom_instructions_file_path: null
-    working_directory: /home/user/source/repos/ai-platform-poc
+    working_directory: "${HOME}/source/repos/ai-platform-poc"
     extra_headers: null
     coding_agent_endpoint:
       mcp_server_name: coding-agent

@@ -49,10 +49,10 @@
 
 | 論点 | 主な実装候補 | 現状評価 |
 | --- | --- | --- |
-| `trace_id` 正規化 | `/home/user/source/repos/ai-chat-util/app/src/ai_chat_util/common/model/ai_chatl_util_models.py` | 実装あり |
-| workflow trace 解決 | `/home/user/source/repos/ai-chat-util/app/src/ai_chat_util/core/app.py` | 実装あり |
-| workflow resume 処理 | `/home/user/source/repos/ai-chat-util/app/src/ai_chat_util/core/app.py`、`/home/user/source/repos/ai-chat-util/app/src/ai_chat_util/workflow/chat_client.py` | 実装あり |
-| API 契約の説明 | `/home/user/source/repos/ai-chat-util/app/src/ai_chat_util/api/api_server.py`、`/home/user/source/repos/ai-chat-util/README_FOR_EXPERTS.md` | 実装あり |
+| `trace_id` 正規化 | `${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/common/model/ai_chatl_util_models.py` | 実装あり |
+| workflow trace 解決 | `${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/core/app.py` | 実装あり |
+| workflow resume 処理 | `${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/core/app.py`、`${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/workflow/chat_client.py` | 実装あり |
+| API 契約の説明 | `${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/api/api_server.py`、`${HOME}/source/repos/ai-chat-util/README_FOR_EXPERTS.md` | 実装あり |
 
 ## 現時点の実装確認結果
 
@@ -93,7 +93,7 @@
 
 ## 前提条件
 
-- `/home/user/source/repos/ai-chat-util/app` の依存が導入済みであること。
+- `${HOME}/source/repos/ai-chat-util/app` の依存が導入済みであること。
 - workflow durable 実行と session store が利用可能であること。
 - pause / resume は API またはライブラリ利用を主対象とすること。
 
@@ -102,14 +102,14 @@
 ### 1. 事前準備
 
 ```bash
-cd /home/user/source/repos/ai-chat-util/app
+cd ${HOME}/source/repos/ai-chat-util/app
 uv sync
 ```
 
 ### 2. focused workflow resume テスト
 
 ```bash
-cd /home/user/source/repos/ai-chat-util/app
+cd ${HOME}/source/repos/ai-chat-util/app
 uv run pytest src/ai_chat_util/workflow/_test_/test_langgraph_workflow.py -k "trace_id or plan or pause or resume" -q
 ```
 
@@ -121,7 +121,7 @@ uv run pytest src/ai_chat_util/workflow/_test_/test_langgraph_workflow.py -k "tr
 ### 3. resume 契約の実装確認
 
 ```bash
-cd /home/user/source/repos/ai-chat-util
+cd ${HOME}/source/repos/ai-chat-util
 grep -RIn "resume_durable_workflow\|trace_id\|thread_id\|status=\"paused\"" app/src README_FOR_EXPERTS.md
 ```
 
@@ -146,7 +146,7 @@ grep -RIn "resume_durable_workflow\|trace_id\|thread_id\|status=\"paused\"" app/
 実行コマンド:
 
 ```bash
-cd /home/user/source/repos/ai-chat-util/app
+cd ${HOME}/source/repos/ai-chat-util/app
 uv run pytest src/ai_chat_util/workflow/_test_/test_langgraph_workflow.py -k "trace_id or plan or pause or resume" -q
 ```
 
