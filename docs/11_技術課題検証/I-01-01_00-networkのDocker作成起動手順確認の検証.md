@@ -99,9 +99,9 @@ docker compose start squid
 
 | 項目 | 結果 | 補足 |
 | --- | --- | --- |
-| 正常系 | 未記入 |  |
-| 異常系 | 未記入 |  |
-| 運用系 | 未記入 |  |
+| 正常系 | OK | `docker compose config -q` は成功した。`docker compose up -d` 後に `squid` は running となり、`ai_platform_internal` と `ai_platform_egress` の作成を確認した。`curl -I -x http://localhost:3128 https://opencode.ai` は `HTTP/2 200` を返した。 |
+| 異常系 | OK | `docker compose stop squid` 実行中は `curl -I -x http://localhost:3128 https://opencode.ai` が `curl: (7) Failed to connect to localhost port 3128` で失敗し、`docker compose start squid` 後は再び成功した。 |
+| 運用系 | OK | `docker compose restart squid` 後も proxy 疎通は維持された。`squid.conf` は bind mount のため、設定変更後は `docker compose restart squid` で反映できる。ネットワーク再作成が必要な場合は `docker compose down` 後に `docker compose up -d` で復旧できる。 |
 
 ## 残課題
 

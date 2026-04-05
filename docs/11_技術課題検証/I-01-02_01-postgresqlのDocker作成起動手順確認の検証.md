@@ -96,9 +96,9 @@ docker compose start
 
 | 項目 | 結果 | 補足 |
 | --- | --- | --- |
-| 正常系 | 未記入 |  |
-| 異常系 | 未記入 |  |
-| 運用系 | 未記入 |  |
+| 正常系 | OK | `docker compose config -q` は成功した。`docker compose up -d` 後に `postgres` は healthy となり、`docker exec postgres pg_isready -U postgres` は `accepting connections` を返した。 |
+| 異常系 | OK | `docker compose stop` 実行中は `docker exec postgres pg_isready -U postgres` が `container ... is not running` で失敗した。加えて、`ai_platform_internal` を未作成状態にすると `docker compose up -d` は `network ai_platform_internal declared as external, but could not be found` で失敗した。復旧後は再度起動できた。 |
+| 運用系 | OK | `docker compose restart` 後も `pg_isready` は成功した。データは bind mount された `/home/user/data/postgres` に保持されるため、再起動後も接続先と保存先を維持できる。 |
 
 ## 残課題
 

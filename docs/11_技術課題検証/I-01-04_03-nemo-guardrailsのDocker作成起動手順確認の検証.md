@@ -92,11 +92,12 @@ docker compose start
 
 | 項目 | 結果 | 補足 |
 | --- | --- | --- |
-| 正常系 | 未記入 |  |
-| 異常系 | 未記入 |  |
-| 運用系 | 未記入 |  |
+| 正常系 | OK | `docker compose config -q` は成功した。`docker compose up -d --build` により `nemo-guardrails` は healthy で起動し、`GET /v1/rails/configs` は `[{"id":"content_safety"}]` を返した。`OPENAI_API_KEY` を LiteLLM の Virtual Key (`sk-poc-master-key-12345`) に合わせた後は、`POST /v1/chat/completions` も HTTP 200 で通常応答した。 |
+| 異常系 | OK | `docker compose stop` 実行中は `curl http://localhost:4080/v1/rails/configs` が `curl: (7) Failed to connect to localhost port 4080` で失敗した。設定不足を模した `nemoguardrails server --config=/missing --port=8000` では `/missing` に対する `FileNotFoundError` がログに出力され、原因を特定できた。 |
+| 運用系 | OK | `docker compose start` / `docker compose restart` 後に `GET /v1/rails/configs` は再度成功した。`configs` 配下の設定更新は `docker compose restart` で反映できる。`OPENAI_API_KEY` にはクライアント向けのキーではなく、NeMo Guardrails から LiteLLM へ接続するための Virtual Key を設定する必要がある。危険入力では `I can't assist with that request.` を返すことも確認した。 |
 
 ## 残課題
 
-- LiteLLM 前段配置の接続試験は別途 G-01 系の検証と合わせて確認する。
-- rails ごとの振る舞い差分は本手順確認の対象外とする。
+- LiteLLM 前段配置の接続試験は成立したが、NeMo Guardrails を生成AIシステムアーキテクチャの標準的なガードレール機能として採用するかどうかは継続検討とする。
+- 継続検討の理由として、クライアントから見た API キー認証がダミー化しやすいこと、Colang 利用時にクライアントが `thread_id` を意識する必要があることなど、運用・実装の扱いづらさがある。
+- rails ごとの振る舞い差分や、他のガードレール実装との比較評価は本手順確認の対象外とする。

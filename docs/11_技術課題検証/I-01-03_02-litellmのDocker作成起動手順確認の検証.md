@@ -102,9 +102,9 @@ docker compose start
 
 | 項目 | 結果 | 補足 |
 | --- | --- | --- |
-| 正常系 | 未記入 |  |
-| 異常系 | 未記入 |  |
-| 運用系 | 未記入 |  |
+| 正常系 | OK | `docker compose config -q` は成功した。`docker compose up -d` 後に `litellm` は running となり、`curl -X POST http://localhost:4000/v1/chat/completions ...` は `http_code=200` で応答した。`.env` には `OPENAI_API_KEY`、`LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`、`LANGFUSE_HOST` の定義を確認した。 |
+| 異常系 | OK | `docker compose stop` 実行中は同 API 呼び出しが `curl: (7) Failed to connect to localhost port 4000` で失敗した。設定不備を模した `docker compose run --rm litellm --config /app/missing-config.yaml --detailed_debug` では `Config file not found: /app/missing-config.yaml` が出力され、起動ログから問題箇所を特定できた。 |
+| 運用系 | OK | `docker compose start` と `docker compose restart` 後に再度 `http_code=200` を確認した。`config.yaml` 変更時は `docker compose restart` で反映できる。依存関係として `ai_platform_internal` / `ai_platform_egress`、共有 PostgreSQL、`.env` に定義した Langfuse / OpenAI 設定が必要である。 |
 
 ## 残課題
 
