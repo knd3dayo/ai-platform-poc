@@ -16,8 +16,8 @@ model_list:
       api_key: os.environ/OPENAI_API_KEY
 
 litellm_settings:
-  success_callbacks: ["langfuse"]
-  failure_callbacks: ["langfuse"]
+  success_callback: ["langfuse"]
+  failure_callback: ["langfuse"]
   # ↓↓↓ 【重要】ここでPythonファイルのインスタンス変数を指定します ↓↓↓
   callbacks: ai_platform_litellm.hook.custom_hooks.proxy_handler_instance
 

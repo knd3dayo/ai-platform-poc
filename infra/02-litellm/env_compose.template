@@ -2,13 +2,15 @@
 # Note: Keep Docker-internal services in NO_PROXY.
 HTTP_PROXY=http://squid:3128
 HTTPS_PROXY=http://squid:3128
-NO_PROXY=localhost,127.0.0.1,0.0.0.0,litellm,squid
+NO_PROXY=localhost,127.0.0.1,0.0.0.0,litellm,squid,langfuse-web
 
 http_proxy=http://squid:3128
 https_proxy=http://squid:3128
-no_proxy=localhost,127.0.0.1,0.0.0.0,litellm,squid
+no_proxy=localhost,127.0.0.1,0.0.0.0,litellm,squid,langfuse-web
 
 LITELLM_MASTER_KEY=sk-poc-master-key-12345
+# ai-chat-util の親 CLI が LiteLLM Proxy を使うための疑似 API キー
+LLM_API_KEY=sk-poc-master-key-12345
 OPENAI_API_KEY=*********************
 
 # ステップ2で取得したキーを入力
@@ -24,3 +26,4 @@ ZITADEL_CLIENT_SECRET=*********************
 ZITADEL_SCOPES=openid profile mcp urn:zitadel:iam:org:project:id:361138300213264387:aud
 
 MCP_GATEWAY_URL=http://localhost:4000/my_hello_mcp/mcp
+# MCP_GATEWAY_URL=http://localhost:5001/mcp

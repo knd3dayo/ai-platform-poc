@@ -93,9 +93,15 @@ docker compose start
 
 | 項目 | 結果 | 補足 |
 | --- | --- | --- |
-| 正常系 | 未記入 |  |
-| 異常系 | 未記入 |  |
-| 運用系 | 未記入 |  |
+| 正常系 | OK | `mkdir -p $HOME/data/redis` 実施後、`docker compose config -q` は成功した。`docker compose up -d` 後に `redis` は `Up (healthy)` となり、`docker compose exec redis redis-cli -a myredissecret ping` は `PONG` を返した。 |
+| 異常系 | OK | `docker compose stop` 後、`docker compose ps -a` では `Exited (143)` を確認した。停止中の `docker compose exec redis redis-cli -a myredissecret ping` は `service "redis" is not running` で失敗し、再開後は再び `PONG` を返した。 |
+| 運用系 | OK | データは `${HOME}/data/redis` に永続化される。認証情報は `REDIS_AUTH` 未設定時に `myredissecret` が既定値として使われるため、PoC では起動できるが、運用時は `.env` などで明示設定する前提で扱う。 |
+
+## 検証メモ
+
+- compose 定義は `redis/redis-stack-server:latest` を利用しており、Redis 本体に加えて Redis Stack 系機能を前提とした構成である。
+- healthcheck は `redis-cli -a ${REDIS_AUTH:-myredissecret} ping` で実施されており、疎通確認手順と同じ条件で稼働判定できる。
+- 今回の手順確認では Streams や RedisInsight までは未確認であり、基本的な起動・停止・再開と認証付き PING の成立性までを確認対象とした。
 
 ## 残課題
 

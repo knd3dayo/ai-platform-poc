@@ -137,6 +137,12 @@ docker compose start
 - 実モデルは LiteLLM の背後に隠蔽し、クライアントや NeMo Guardrails からはエイリアス名だけを参照する構成へ寄せた。
 - `poc-chat-model` を指定した直接呼び出しでは、HTTP 200 かつ `pong` 応答を確認した。
 
+### 6. メモリ使用量メモ
+
+- `docker stats --no-stream` 時点で LiteLLM コンテナは約 `574 MiB` を使用しており、当時の稼働コンテナ群では最も大きかった。
+- `/proc/1/status` の確認では `VmRSS` は約 `555 MiB`、`Threads` は 7 だった。
+- ログ上では spend 集計、DB 書き込み、日次集計キューなどの定期処理が継続的に動作しており、単純な OpenAI 互換中継より常駐メモリが大きくなる構成である。
+
 ## 残課題
 
 - モデル別 API キーの切替や hook 実装の詳細確認は別サブ課題で扱う。
