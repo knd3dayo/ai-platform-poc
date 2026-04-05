@@ -1,0 +1,1 @@
+opencode run '/home/user/source/repos/ai-platform-poc/docs 配下の markdown を調べて概要を整理してください。ファイル変更はしないでください。'

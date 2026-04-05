@@ -5,11 +5,11 @@
       "command": "uv",
       "args": [
         "--directory",
-        "${HOME}/source/repos/ai-chat-util/app",
+        "/home/user/source/repos/ai-chat-util/app",
         "run",
         "coding-agent-mcp",
         "--config",
-        "${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.coding-only.poc.yml"
+        "/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.coding-only.poc.yml"
       ]
     }
   }

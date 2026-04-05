@@ -5,11 +5,11 @@
       "command": "uv",
       "args": [
         "--directory",
-        "${HOME}/source/repos/ai-chat-util/app",
+        "/home/user/source/repos/ai-chat-util/app",
         "run",
         "coding-agent-mcp",
         "--config",
-        "${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml"
+        "/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml"
       ]
     },
     "normal-tools": {
@@ -17,12 +17,12 @@
       "command": "uv",
       "args": [
         "--directory",
-        "${HOME}/source/repos/ai-chat-util/app",
+        "/home/user/source/repos/ai-chat-util/app",
         "run",
         "-m",
         "ai_chat_util.mcp.mcp_server",
         "--config",
-        "${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml",
+        "/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.poc.yml",
         "--tools",
         "get_loaded_config_info,analyze_files,analyze_pdf_files,analyze_image_files"
       ]

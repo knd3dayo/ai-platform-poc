@@ -9,8 +9,8 @@ ai_chat_util_config:
     provider: openai
     timeout_seconds: 60
     api_key: os.environ/LLM_API_KEY
-    completion_model: gpt-4o
-    embedding_model: text-embedding-3-large
+    completion_model: poc-chat-model
+    embedding_model: poc-embedding-model
     base_url: http://localhost:4000
     api_version: null
 

@@ -1,0 +1,10 @@
+{
+  "cmd": [
+    "opencode",
+    "run",
+    "作業ディレクトリを確認し、ファイルは変更せず、現在の workspace_path と対象ディレクトリ名だけを短く報告してください。"
+  ],
+  "cwd": "/home/user/source/repos/ai-platform-poc/tmp/a0405-workspace",
+  "timestamp": "2026-04-05T13:12:55.375549+00:00",
+  "platform": "linux"
+}
