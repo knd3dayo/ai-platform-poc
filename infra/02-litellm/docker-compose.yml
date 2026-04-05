@@ -11,7 +11,7 @@ services:
       - ./src/ai_platform_litellm:/app/ai_platform_litellm
     ports:
       - "4000:4000"
-    command: [ "--config", "/app/config.yaml", "--detailed_debug" ]
+    command: [ "--config", "/app/config.yaml" ]
     extra_hosts:
       - "localhost:host-gateway"
 

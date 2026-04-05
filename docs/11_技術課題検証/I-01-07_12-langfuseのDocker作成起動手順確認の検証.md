@@ -180,6 +180,9 @@ docker compose start
 - Langfuse Public API は Basic 認証で、username に `LANGFUSE_PUBLIC_KEY`、password に `LANGFUSE_SECRET_KEY` を指定する。LiteLLM 連携確認では `GET /api/public/traces`、必要に応じて `GET /api/public/traces/{traceId}` を使うと、UI 操作なしで収集状況を確認できる。
 - LiteLLM コンテナでは `HTTP_PROXY` / `HTTPS_PROXY` が `squid:3128` を向いているため、Docker 内サービス名で疎通させる相手は `NO_PROXY` / `no_proxy` に明示する必要がある。`langfuse-web` が未登録だと Langfuse SDK の `auth_check()` が Squid へ流れ、`ERR_ACCESS_DENIED` で失敗した。
 - Langfuse v3 の self-host 構成では、受信イベントをまず S3/MinIO へ保存してから worker が取り込む。MinIO 利用時も `LANGFUSE_S3_EVENT_UPLOAD_REGION` が必要で、未設定だと Langfuse Web ログに `Failed to upload JSON to S3 ... Region is missing` が出て trace / observation 生成が止まる。今回の構成では `auto` を設定すると解消した。
+- 2026-04-05 のメモリ再計測では、`clickhouse` は約 `856 MiB`、`langfuse-web` は約 `568 MiB`、`langfuse-worker` は約 `365 MiB` だった。`clickhouse` は `clickhouse-server` 単体で約 `1.10 GiB RSS` を保持しており、Langfuse 一式では最重量コンポーネントだった。
+- ClickHouse 内部メトリクスでは `MemoryResident` が約 `1.11 GB`、`jemalloc.active` が約 `641 MB`、`MemoryTracking` が約 `300 MB` で、再起動直後の一時処理ではなく常駐キャッシュ込みのベースライン使用量が大きいことを確認した。
+- メモリ上限を設ける場合は、まず Docker Compose 側で `mem_limit` を設定するより、ClickHouse 側設定として `max_server_memory_usage` と `max_memory_usage_for_all_queries` を XML で明示し、OS への余白を残しながら段階的に制限する方が安全である。PoC では 8.73 GiB 上限のホストに対して、まず `max_server_memory_usage` を `2G` 前後、`max_memory_usage_for_all_queries` を `1G` 前後から試すのが現実的な出発点となる。
 
 ## 残課題
 

@@ -103,7 +103,7 @@ docker compose start
 | 項目 | 結果 | 補足 |
 | --- | --- | --- |
 | 正常系 | OK | `docker compose config -q` は成功した。`docker compose up -d` 後に `litellm` は running となり、`model=poc-chat-model` を指定した `curl -X POST http://localhost:4000/v1/chat/completions ...` は `http_code=200` で応答し、本文は `pong` を返した。`.env` には `OPENAI_API_KEY`、`LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`、`LANGFUSE_HOST` の定義を確認した。 |
-| 異常系 | OK | `docker compose stop` 実行中は同 API 呼び出しが `curl: (7) Failed to connect to localhost port 4000` で失敗した。設定不備を模した `docker compose run --rm litellm --config /app/missing-config.yaml --detailed_debug` では `Config file not found: /app/missing-config.yaml` が出力され、起動ログから問題箇所を特定できた。 |
+| 異常系 | OK | `docker compose stop` 実行中は同 API 呼び出しが `curl: (7) Failed to connect to localhost port 4000` で失敗した。設定不備を模した `docker compose run --rm litellm --config /app/missing-config.yaml` では `Config file not found: /app/missing-config.yaml` が出力され、起動ログから問題箇所を特定できた。 |
 | 運用系 | OK | `docker compose start` と `docker compose restart` 後に再度 `http_code=200` を確認した。`config.yaml` 変更時は `docker compose restart` で反映できる。依存関係として `ai_platform_internal` / `ai_platform_egress`、共有 PostgreSQL、`.env` に定義した Langfuse / OpenAI 設定が必要である。 |
 
 ## 検証メモ
@@ -139,8 +139,10 @@ docker compose start
 
 ### 6. メモリ使用量メモ
 
-- `docker stats --no-stream` 時点で LiteLLM コンテナは約 `574 MiB` を使用しており、当時の稼働コンテナ群では最も大きかった。
-- `/proc/1/status` の確認では `VmRSS` は約 `555 MiB`、`Threads` は 7 だった。
+- 2026-04-05 の再計測では、`docker stats --no-stream` 時点で LiteLLM コンテナは `854 MiB` 前後を使用しており、Langfuse ClickHouse と並んで重いコンテナだった。
+- プロセス内訳は、LiteLLM 本体の Python プロセスが約 `814 MiB RSS`、Prisma query engine が約 `23 MiB RSS` で、補助スレッドや子プロセスは相対的に小さい。
+- 起動オプションから `--detailed_debug` を外して再計測したところ、定常状態の LiteLLM コンテナは `834 MiB` 前後となり、差分は約 `20 MiB` だった。ログ量は大きく減る一方、メモリ削減効果は限定的である。
+- 通常ログ起動でも `POST http://localhost:4000/chat/completions` は HTTP 200 で継続応答したため、常時デバッグが不要な通常運用では `--detailed_debug` なしを基本値としてよい。
 - ログ上では spend 集計、DB 書き込み、日次集計キューなどの定期処理が継続的に動作しており、単純な OpenAI 互換中継より常駐メモリが大きくなる構成である。
 
 ## 残課題
