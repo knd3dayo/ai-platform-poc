@@ -1,8 +1,8 @@
-# I-01-09_22-denodoのDocker作成起動手順確認の検証
+# I-01-09_23-denodoのDocker作成起動手順確認の検証
 
 ## 検証目的
 
-本検証の主目的は、サブ課題 I-01-09「`22-denodo` の Docker 作成・起動手順確認」について、Denodo AI SDK 側の compose 資材を起動し、補助資材と合わせて利用前提を確認できるかを確認することである。
+本検証の主目的は、サブ課題 I-01-09「`23-denodo` の Docker 作成・起動手順確認」について、Denodo AI SDK 側の compose 資材を起動し、補助資材と合わせて利用前提を確認できるかを確認することである。
 
 最終的には、I-01 の完了判定に必要な材料として、正常系、代表的な異常系、運用上の制約を明確にすることを目指す。
 
@@ -10,15 +10,15 @@
 
 | 親課題 | サブ課題 | この文書で主に確認すること |
 | --- | --- | --- |
-| I-01 | I-01-09 | `infra/22-denodo/denodo-ai-sdk` 配下の compose 資材と補助ファイルで起動確認できること |
+| I-01 | I-01-09 | `infra/23-denodo/denodo-ai-sdk` 配下の compose 資材と補助ファイルで起動確認できること |
 
 ## 関連するアーキテクチャ検討文書
 
 - [技術課題と対応方針](../03_検証準備/技術課題と対応方針.md)
-  - I-01-09 に対応し、`infra/22-denodo` の起動手順を確認する。
+  - I-01-09 に対応し、`infra/23-denodo` の起動手順を確認する。
 - [01_生成AI基盤インフラ構築手順.md](../21_検証結果/01_生成AI基盤インフラ構築手順.md)
   - Denodo AI SDK の準備手順を参照する。
-- [../../infra/22-denodo/denodo-ai-sdk/docker-compose.yml](../../infra/22-denodo/denodo-ai-sdk/docker-compose.yml)
+- [../../infra/23-denodo/denodo-ai-sdk/docker-compose.yml](../../infra/23-denodo/denodo-ai-sdk/docker-compose.yml)
   - 実際の compose 定義を確認する。
 
 ## 検証で確認したいこと
@@ -48,14 +48,14 @@
 ### 1. 事前準備
 
 ```bash
-cd "$AI_PLATFORM_POC_ROOT/infra/22-denodo/denodo-ai-sdk"
+cd "$AI_PLATFORM_POC_ROOT/infra/23-denodo/denodo-ai-sdk"
 docker compose config -q
 ```
 
 ### 2. 正常系確認
 
 ```bash
-cd "$AI_PLATFORM_POC_ROOT/infra/22-denodo/denodo-ai-sdk"
+cd "$AI_PLATFORM_POC_ROOT/infra/23-denodo/denodo-ai-sdk"
 docker compose up -d
 docker compose ps
 docker compose logs --tail=50
@@ -70,7 +70,7 @@ docker compose logs --tail=50
 ### 3. 異常系確認
 
 ```bash
-cd "$AI_PLATFORM_POC_ROOT/infra/22-denodo/denodo-ai-sdk"
+cd "$AI_PLATFORM_POC_ROOT/infra/23-denodo/denodo-ai-sdk"
 docker compose stop
 docker compose ps
 docker compose start

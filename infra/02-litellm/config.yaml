@@ -2,15 +2,15 @@ general_settings:
   database_url: "postgresql://postgres:postgres@postgres:5432/postgres"
   # allow_requests_on_db_unavailable: true
 model_list:
-  - model_name: gpt-4o
+  - model_name: poc-chat-model
     litellm_params:
       model: openai/gpt-4o
       api_key: os.environ/OPENAI_API_KEY
-  - model_name: text-embedding-3-large
+  - model_name: poc-embedding-model
     litellm_params:
       model: openai/text-embedding-3-large
       api_key: os.environ/OPENAI_API_KEY
-  - model_name: claude-*
+  - model_name: poc-fast-model
     litellm_params:
       model: openai/gpt-5-mini
       api_key: os.environ/OPENAI_API_KEY

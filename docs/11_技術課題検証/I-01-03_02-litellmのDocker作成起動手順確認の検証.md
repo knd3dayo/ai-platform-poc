@@ -64,7 +64,7 @@ docker compose ps
 curl -X POST 'http://localhost:4000/v1/chat/completions' \
   -H 'Authorization: Bearer sk-poc-master-key-12345' \
   -H 'Content-Type: application/json' \
-  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"ping"}]}'
+  -d '{"model":"poc-chat-model","messages":[{"role":"user","content":"ping"}]}'
 ```
 
 期待結果:
@@ -81,7 +81,7 @@ docker compose stop
 curl -X POST 'http://localhost:4000/v1/chat/completions' \
   -H 'Authorization: Bearer sk-poc-master-key-12345' \
   -H 'Content-Type: application/json' \
-  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"ping"}]}'
+  -d '{"model":"poc-chat-model","messages":[{"role":"user","content":"ping"}]}'
 docker compose start
 ```
 
@@ -102,11 +102,43 @@ docker compose start
 
 | 項目 | 結果 | 補足 |
 | --- | --- | --- |
-| 正常系 | OK | `docker compose config -q` は成功した。`docker compose up -d` 後に `litellm` は running となり、`curl -X POST http://localhost:4000/v1/chat/completions ...` は `http_code=200` で応答した。`.env` には `OPENAI_API_KEY`、`LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`、`LANGFUSE_HOST` の定義を確認した。 |
+| 正常系 | OK | `docker compose config -q` は成功した。`docker compose up -d` 後に `litellm` は running となり、`model=poc-chat-model` を指定した `curl -X POST http://localhost:4000/v1/chat/completions ...` は `http_code=200` で応答し、本文は `pong` を返した。`.env` には `OPENAI_API_KEY`、`LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`、`LANGFUSE_HOST` の定義を確認した。 |
 | 異常系 | OK | `docker compose stop` 実行中は同 API 呼び出しが `curl: (7) Failed to connect to localhost port 4000` で失敗した。設定不備を模した `docker compose run --rm litellm --config /app/missing-config.yaml --detailed_debug` では `Config file not found: /app/missing-config.yaml` が出力され、起動ログから問題箇所を特定できた。 |
 | 運用系 | OK | `docker compose start` と `docker compose restart` 後に再度 `http_code=200` を確認した。`config.yaml` 変更時は `docker compose restart` で反映できる。依存関係として `ai_platform_internal` / `ai_platform_egress`、共有 PostgreSQL、`.env` に定義した Langfuse / OpenAI 設定が必要である。 |
+
+## 検証メモ
+
+### 1. モデル名はエイリアス運用を基本とする
+
+- LiteLLM は実在モデル名をそのまま公開するよりも、`production-chat-model` や `standard-large-model` のようなエイリアスをクライアントに使わせる運用が望ましい。
+- エイリアスを使うことで、クライアント実装を変更せずに、LiteLLM 側の `config.yaml` だけで接続先モデルを差し替えられる。
+- 開発、検証、本番で同じエイリアス名を維持したまま、背後の実モデルだけを切り替える運用にも向く。
+
+### 2. エイリアス利用の主な利点
+
+- 疎結合を維持できる。将来 `gpt-4o` から別モデルへ移行しても、クライアントコードの修正範囲を最小化できる。
+- 環境ごとの差し替えがしやすい。たとえば Dev では安価なモデル、本番では高性能モデルへ同一エイリアスで切り替えられる。
+- Virtual Key、流量制御、利用制限などの運用ルールを「実モデル名」ではなく「業務上の役割名」に紐づけられる。
+
+### 3. NeMo Guardrails と組み合わせる場合の考え方
+
+- クライアントは NeMo Guardrails 側の rails ID もしくは config 名を指定し、その設定の内部で LiteLLM のエイリアスを呼ぶ形にするのが整理しやすい。
+- つまり、クライアントが直接実モデル名を知る必要はなく、Guardrails 側は対話制御名、LiteLLM 側は LLM ルーティング名として役割分担させるのが望ましい。
+- この分離により、Guardrails のシナリオ名と、LiteLLM 上の実モデル選択・切替を独立して運用できる。
+
+### 4. 厳格なクライアントとの互換性メモ
+
+- OpenAI 互換クライアントの多くは `model` を単なる文字列として送るため、LiteLLM がその名前を解決できれば独自エイリアスでも問題ない。
+- 一方で、利用ツール側が既知のモデル名リストでバリデーションする場合は、表向きのエイリアスを `gpt-4o` のような既知名に寄せ、その先を LiteLLM 内部で特定バージョンへ固定する運用も選択肢になる。
+
+### 5. 現行 PoC 構成に対する補足
+
+- `infra/02-litellm/config.yaml` は `poc-chat-model`、`poc-embedding-model`、`poc-fast-model` のような役割ベースの `model_name` に変更した。
+- 実モデルは LiteLLM の背後に隠蔽し、クライアントや NeMo Guardrails からはエイリアス名だけを参照する構成へ寄せた。
+- `poc-chat-model` を指定した直接呼び出しでは、HTTP 200 かつ `pong` 応答を確認した。
 
 ## 残課題
 
 - モデル別 API キーの切替や hook 実装の詳細確認は別サブ課題で扱う。
+- LiteLLM の `model_name` を実モデル名直書きから業務役割ベースのエイリアスへ変更するかは別途判断する。
 - Langfuse 連携の完全性は I-01-07 と合わせて確認する。

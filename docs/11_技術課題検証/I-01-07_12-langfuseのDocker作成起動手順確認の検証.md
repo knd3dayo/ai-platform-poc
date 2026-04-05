@@ -1,8 +1,8 @@
-# I-01-07_11-langfuseのDocker作成起動手順確認の検証
+# I-01-07_12-langfuseのDocker作成起動手順確認の検証
 
 ## 検証目的
 
-本検証の主目的は、サブ課題 I-01-07「`11-langfuse` の Docker 作成・起動手順確認」について、Langfuse を可観測性基盤として起動できるか確認することである。
+本検証の主目的は、サブ課題 I-01-07「`12-langfuse` の Docker 作成・起動手順確認」について、Langfuse を可観測性基盤として起動できるか確認することである。
 
 最終的には、I-01 の完了判定に必要な材料として、正常系、代表的な異常系、運用上の制約を明確にすることを目指す。
 
@@ -15,10 +15,10 @@
 ## 関連するアーキテクチャ検討文書
 
 - [技術課題と対応方針](../03_検証準備/技術課題と対応方針.md)
-  - I-01-07 に対応し、`infra/11-langfuse` の起動手順を確認する。
+  - I-01-07 に対応し、`infra/12-langfuse` の起動手順を確認する。
 - [01_生成AI基盤インフラ構築手順.md](../21_検証結果/01_生成AI基盤インフラ構築手順.md)
   - Langfuse 構築手順の基準を参照する。
-- [../../infra/11-langfuse/docker-compose.yml](../../infra/11-langfuse/docker-compose.yml)
+- [../../infra/12-langfuse/docker-compose.yml](../../infra/12-langfuse/docker-compose.yml)
   - 実際の compose 定義を確認する。
 
 ## 検証で確認したいこと
@@ -49,7 +49,7 @@
 ### 1. 事前準備
 
 ```bash
-cd "$AI_PLATFORM_POC_ROOT/infra/11-langfuse"
+cd "$AI_PLATFORM_POC_ROOT/infra/12-langfuse"
 docker compose config -q
 mkdir -p "$HOME/data/ai-platform-poc/clickhouse/data" "$HOME/data/ai-platform-poc/clickhouse/logs"
 mkdir -p "$HOME/data/ai-platform-poc/minio"
@@ -58,7 +58,7 @@ mkdir -p "$HOME/data/ai-platform-poc/minio"
 ### 2. 正常系確認
 
 ```bash
-cd "$AI_PLATFORM_POC_ROOT/infra/11-langfuse"
+cd "$AI_PLATFORM_POC_ROOT/infra/12-langfuse"
 docker compose up -d
 docker compose ps
 curl -I http://localhost:3000
@@ -73,7 +73,7 @@ curl -I http://localhost:3000
 ### 3. 異常系確認
 
 ```bash
-cd "$AI_PLATFORM_POC_ROOT/infra/11-langfuse"
+cd "$AI_PLATFORM_POC_ROOT/infra/12-langfuse"
 docker compose stop
 curl -I http://localhost:3000
 docker compose start

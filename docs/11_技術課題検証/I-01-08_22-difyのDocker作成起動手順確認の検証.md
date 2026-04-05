@@ -1,8 +1,8 @@
-# I-01-08_21-difyのDocker作成起動手順確認の検証
+# I-01-08_22-difyのDocker作成起動手順確認の検証
 
 ## 検証目的
 
-本検証の主目的は、サブ課題 I-01-08「`21-dify` の Docker 作成・起動手順確認」について、Dify を WF 型アプリケーション実行環境として起動できるか確認することである。
+本検証の主目的は、サブ課題 I-01-08「`22-dify` の Docker 作成・起動手順確認」について、Dify を WF 型アプリケーション実行環境として起動できるか確認することである。
 
 最終的には、I-01 の完了判定に必要な材料として、正常系、代表的な異常系、運用上の制約を明確にすることを目指す。
 
@@ -15,12 +15,12 @@
 ## 関連するアーキテクチャ検討文書
 
 - [技術課題と対応方針](../03_検証準備/技術課題と対応方針.md)
-  - I-01-08 に対応し、`infra/21-dify` の起動手順を確認する。
+  - I-01-08 に対応し、`infra/22-dify` の起動手順を確認する。
 - [01_生成AI基盤インフラ構築手順.md](../21_検証結果/01_生成AI基盤インフラ構築手順.md)
   - Dify 構築手順の基準を参照する。
-- [../../infra/21-dify/docker/docker-compose.yaml](../../infra/21-dify/docker/docker-compose.yaml)
+- [../../infra/22-dify/docker/docker-compose.yaml](../../infra/22-dify/docker/docker-compose.yaml)
   - 実際の compose 定義を確認する。
-- [../../infra/21-dify/docker/.env.example](../../infra/21-dify/docker/.env.example)
+- [../../infra/22-dify/docker/.env.example](../../infra/22-dify/docker/.env.example)
   - 必要な環境変数の前提を確認する。
 
 ## 検証で確認したいこと
@@ -44,21 +44,21 @@
 ## 前提条件
 
 - I-01-01 と I-01-02 が成立していること。
-- `infra/21-dify/docker` 配下に必要な `.env` と volume 設定が用意されていること。
+- `infra/22-dify/docker` 配下に必要な `.env` と volume 設定が用意されていること。
 
 ## 検証手順
 
 ### 1. 事前準備
 
 ```bash
-cd "$AI_PLATFORM_POC_ROOT/infra/21-dify/docker"
+cd "$AI_PLATFORM_POC_ROOT/infra/22-dify/docker"
 docker compose -f docker-compose.yaml config -q
 ```
 
 ### 2. 正常系確認
 
 ```bash
-cd "$AI_PLATFORM_POC_ROOT/infra/21-dify/docker"
+cd "$AI_PLATFORM_POC_ROOT/infra/22-dify/docker"
 docker compose -f docker-compose.yaml up -d
 docker compose -f docker-compose.yaml ps
 curl -I http://localhost:8081
@@ -73,7 +73,7 @@ curl -I http://localhost:8081
 ### 3. 異常系確認
 
 ```bash
-cd "$AI_PLATFORM_POC_ROOT/infra/21-dify/docker"
+cd "$AI_PLATFORM_POC_ROOT/infra/22-dify/docker"
 docker compose -f docker-compose.yaml stop
 curl -I http://localhost:8081
 docker compose -f docker-compose.yaml start

@@ -1,8 +1,8 @@
-# I-01-06_05-redisのDocker作成起動手順確認の検証
+# I-01-06_11-redisのDocker作成起動手順確認の検証
 
 ## 検証目的
 
-本検証の主目的は、サブ課題 I-01-06「`05-redis` の Docker 作成・起動手順確認」について、Redis を Event Bus / 状態管理用途の共通ミドルウェアとして起動できるか確認することである。
+本検証の主目的は、サブ課題 I-01-06「`11-redis` の Docker 作成・起動手順確認」について、Redis を Event Bus および Langfuse 補助用途の共通ミドルウェアとして起動できるか確認することである。
 
 最終的には、I-01 の完了判定に必要な材料として、正常系、代表的な異常系、運用上の制約を明確にすることを目指す。
 
@@ -15,10 +15,10 @@
 ## 関連するアーキテクチャ検討文書
 
 - [技術課題と対応方針](../03_検証準備/技術課題と対応方針.md)
-  - I-01-06 に対応し、`infra/05-redis` の起動手順を確認する。
+  - I-01-06 に対応し、`infra/11-redis` の起動手順を確認する。
 - [01_生成AI基盤インフラ構築手順.md](../21_検証結果/01_生成AI基盤インフラ構築手順.md)
   - Redis 構築手順の基準を参照する。
-- [../../infra/05-redis/docker-compose.yml](../../infra/05-redis/docker-compose.yml)
+- [../../infra/11-redis/docker-compose.yml](../../infra/11-redis/docker-compose.yml)
   - 実際の compose 定義を確認する。
 
 ## 検証で確認したいこと
@@ -48,14 +48,14 @@
 ### 1. 事前準備
 
 ```bash
-cd "$AI_PLATFORM_POC_ROOT/infra/05-redis"
+cd "$AI_PLATFORM_POC_ROOT/infra/11-redis"
 docker compose config -q
 ```
 
 ### 2. 正常系確認
 
 ```bash
-cd "$AI_PLATFORM_POC_ROOT/infra/05-redis"
+cd "$AI_PLATFORM_POC_ROOT/infra/11-redis"
 docker compose up -d
 docker compose ps
 docker compose exec redis redis-cli ping
@@ -70,7 +70,7 @@ docker compose exec redis redis-cli ping
 ### 3. 異常系確認
 
 ```bash
-cd "$AI_PLATFORM_POC_ROOT/infra/05-redis"
+cd "$AI_PLATFORM_POC_ROOT/infra/11-redis"
 docker compose stop
 docker compose exec redis redis-cli ping
 docker compose start

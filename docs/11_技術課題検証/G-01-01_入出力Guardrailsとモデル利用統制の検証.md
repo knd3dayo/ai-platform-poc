@@ -104,7 +104,7 @@ flowchart LR
 | LiteLLM Hook | PoC 初期段階の入力遮断、メタデータ付与 | `infra/02-litellm/src/ai_platform_litellm` |
 | NeMo Guardrails | 入力 rails / 出力 rails による意味論的 Guardrails | `infra/03-nemo-guardrails` |
 | PostgreSQL | LiteLLM Proxy の内部 DB | `infra/01-postgresql` |
-| Langfuse | 将来のトレース集約・評価格納先 | `infra/11-langfuse` |
+| Langfuse | 将来のトレース集約・評価格納先 | `infra/12-langfuse` |
 
 ## 検証の考え方
 
