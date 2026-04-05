@@ -16,14 +16,14 @@
 
 ## 関連するアーキテクチャ検討文書
 
-- [技術課題と対応方針](../02_アーキテクチャ実現方式/技術課題と対応方針.md)
+- [技術課題と対応方針](../03_検証準備/技術課題と対応方針.md)
   - A-02-03 に対応し、状態管理 DB と Checkpointer の責務が混ざらないことを確認対象にする。
 - [01_生成AI基盤のコンポーネント配置と実装・運用原則.md](../02_アーキテクチャ実現方式/01_生成AI基盤のコンポーネント配置と実装・運用原則.md)
   - Event Bus、状態管理DB、Checkpointer の三者分離原則を確認する。
 - [02_生成AIアプリケーション層の実現方式.md](../02_アーキテクチャ実現方式/02_生成AIアプリケーション層の実現方式.md)
   - UI 向け状態と AI 内部状態を単一ストアに混ぜない方針を確認する。
-- [システム構成案とPoC環境準備.md](../04_検証準備/システム構成案とPoC環境準備.md)
-  - BFF が状態管理 DB を持ち、Application 層が Checkpointer を持つ構成案を確認する。
+- [07_APIゲートウェイBFF層実装方針.md](../03_検証準備/07_APIゲートウェイBFF層実装方針.md)
+  - BFF が状態管理 DB を持ち、Application 層が Checkpointer を持つ構成を確認する。
 - [A-02-01_interruptとCheckpointer保存の検証.md](./A-02-01_interruptとCheckpointer保存の検証.md)
   - Checkpointer が AI 内部状態の保存先として成立していることを参照する。
 
@@ -53,8 +53,8 @@
 | --- | --- | --- |
 | AI 内部状態の保存 | `/home/user/source/repos/ai-chat-util/app/src/ai_chat_util/base/agent/agent_client_util.py`、`/home/user/source/repos/ai-chat-util/app/src/ai_chat_util/workflow/workflow/runner.py` | 実装あり |
 | workflow 再開メタ情報 | `/home/user/source/repos/ai-chat-util/app/src/ai_chat_util/workflow/session_store.py` | 実装あり |
-| UI 状態管理 DB の責務 | `/home/user/source/repos/ai-platform-poc/docs/02_アーキテクチャ実現方式/01_生成AI基盤のコンポーネント配置と実装・運用原則.md`、`/home/user/source/repos/ai-platform-poc/docs/04_検証準備/システム構成案とPoC環境準備.md` | 設計あり |
-| BFF による状態管理 | `/home/user/source/repos/ai-platform-poc/docs/04_検証準備/システム構成案とPoC環境準備.md` | 設計あり |
+| UI 状態管理 DB の責務 | `/home/user/source/repos/ai-platform-poc/docs/02_アーキテクチャ実現方式/01_生成AI基盤のコンポーネント配置と実装・運用原則.md`、`/home/user/source/repos/ai-platform-poc/docs/03_検証準備/07_APIゲートウェイBFF層実装方針.md` | 設計あり |
+| BFF による状態管理 | `/home/user/source/repos/ai-platform-poc/docs/03_検証準備/07_APIゲートウェイBFF層実装方針.md` | 設計あり |
 
 ## 現時点の実装確認結果
 
@@ -97,7 +97,7 @@
 
 ```bash
 cd /home/user/source/repos/ai-platform-poc
-grep -RIn "状態管理DB\|Checkpointer\|Event Bus" docs/02_アーキテクチャ実現方式 docs/04_検証準備 | head -n 80
+grep -RIn "状態管理DB\|Checkpointer\|Event Bus" docs/02_アーキテクチャ実現方式 docs/03_検証準備 | head -n 80
 ```
 
 期待結果:

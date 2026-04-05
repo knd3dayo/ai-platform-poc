@@ -14,7 +14,7 @@
 
 ## 関連するアーキテクチャ検討文書
 
-- [技術課題と対応方針](../02_アーキテクチャ実現方式/技術課題と対応方針.md)
+- [技術課題と対応方針](../03_検証準備/技術課題と対応方針.md)
   - I-01-04 に対応し、`infra/03-nemo-guardrails` の起動手順を確認する。
 - [../../infra/03-nemo-guardrails/docker-compose.yml](../../infra/03-nemo-guardrails/docker-compose.yml)
   - 実際の compose 定義を確認する。
