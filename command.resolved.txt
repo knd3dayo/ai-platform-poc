@@ -1,4 +1,4 @@
-opencode run '作業対象は /home/user/source/repos/ai-platform-poc です。まず get_loaded_config_info を使って現在の設定ファイルの場所を確認してください。その後で必ず coding agent を使い、docs/11_検証 配下を調査して、MCP サーバー化検証ドキュメントで流用できる見出しを 3 点だけ挙げてください。最後に、設定ファイルの場所、見出し 3 点、どの情報をどのツールで確認したかをまとめて回答してください。
+opencode run 'docs 配下を調査して、共通している見出しを3点に整理してください。必要なら coding-agent を使ってください。
 
 Requirements:
 - Investigate only the Markdown files relevant to the user request.
