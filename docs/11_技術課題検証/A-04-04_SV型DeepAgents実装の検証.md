@@ -258,10 +258,41 @@ uv --directory ./app run -m ai_chat_util.cli \
 - `deep_agent` route が `execute` / `status` / `get_result` を使わず、非同期ジョブ系を `coding_agent` 側へ残す設計根拠も、README と system prompt 実装で確認できた。
 - 一方で live の内容品質としては、既存ディレクトリを空または未検出と返すケースがあり、「深い調査で期待した実成果が取れるか」はまだ十分に確認できていない。
 
+### 2026-04-08 追加追試結果
+
+SV 型の主入口 [A-04-03_SV型LangGraph独自実装の検証.md](./A-04-03_SV型LangGraph独自実装の検証.md) の追試として、structured routing 配下の deep investigation シナリオを再実行した。
+
+実行コマンド:
+
+```bash
+cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
+./run-ai-chat-util.sh \
+  --config ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.poc.yml \
+  agent_chat -p "work ディレクトリ全体を起点に深く調査してください"
+```
+
+実行結果:
+
+- `trace_id=e4e63e84e13a4d0eb8f07c29d48d1ad2`
+- `route_decided.route_name=deep_agent`
+- `route_decided.reason_code=route.multi_step_investigation_needed`
+- `tool_catalog_resolved.payload.tool_agent_names=["deep_agent"]`
+- `tool_selected.tool_name=analyze_files`
+- `tool_result_received.reason_code=sufficiency.tool_result_error_only`
+- `final_answer_validated.reason_code=sufficiency.missing_user_context`
+- `final_status=paused`
+
+評価:
+
+- `deep_agent` への route 境界自体は live で再確認できた。
+- 一方で DeepAgents 側は `/home/user/source/repos/ai-platform-poc/work` を対象に `analyze_files` を呼び、`Path not found` により user input 要求へ収束した。
+- したがって、既知の「docs を空または未検出と返す」事象に加えて、`work` のような directory 指定でも path 解釈・展開品質に起因する失敗が再現した。
+- 本文書では route と audit contract の成立性は維持すると判断するが、directory path の解釈品質は継続課題として扱う。
+
 ## 残課題
 
 - `run_deepagent_chat` は forced deep route、`agent_chat` の `deep_agent` は SV 型内部 route として使い分けられることは確認できたが、利用ガイドとしてどの要求をどちらへ寄せるかの整理はなお必要である。
 - DeepAgents を SV 型として採用する場合の停止条件、予算上限、監査出力の運用基準は追加検証が必要である。
-- live 実行では既存ディレクトリを空または未検出と返すケースがあり、DeepAgents の path 解釈・ディレクトリ展開品質は追加確認が必要である。
+- live 実行では既存ディレクトリを空または未検出と返すケースに加え、`/home/user/source/repos/ai-platform-poc/work` を `Path not found` と扱うケースもあり、DeepAgents の path 解釈・ディレクトリ展開品質は追加確認が必要である。
 - `test_mcp_client_chat_emits_deep_agent_audit_events` は現行モジュール構成に追随できていない既存失敗があり、監査回帰テストの保守が必要である。
 - 自律型としての DeepAgents は A-04-06 で別途整理する。
