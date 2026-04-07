@@ -9,6 +9,8 @@ https_proxy=http://squid:3128
 no_proxy=localhost,127.0.0.1,0.0.0.0,litellm,squid,nemo-guardrails,postgres,redis,langfuse-web
 
 # NeMo Guardrails server uses LiteLLM as the upstream OpenAI-compatible endpoint.
+# Bind the published port to localhost so only the Docker host can access it directly.
+NEMO_GUARDRAILS_HOST_BIND=127.0.0.1
 NEMO_GUARDRAILS_HOST_PORT=4080
 MAIN_MODEL_ENGINE=openai
 MAIN_MODEL_BASE_URL=http://litellm:4000/v1
@@ -19,4 +21,4 @@ OPENAI_API_KEY=*********************
 LITELLM_MASTER_KEY=sk-poc-master-key-12345
 
 NEMO_GUARDRAILS_SERVER_ENABLE_CORS=true
-NEMO_GUARDRAILS_SERVER_ALLOWED_ORIGINS=*
+NEMO_GUARDRAILS_SERVER_ALLOWED_ORIGINS=http://localhost,http://127.0.0.1,http://localhost:3000,http://127.0.0.1:3000,http://localhost:4080,http://127.0.0.1:4080

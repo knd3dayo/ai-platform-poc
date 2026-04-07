@@ -23,7 +23,9 @@
 1. `env_compose.template` を参考に `.env` を作成する。
 2. LiteLLM 側で使う認証キーに合わせて `OPENAI_API_KEY` を設定する。
 3. 必要なら `MAIN_MODEL_BASE_URL` を変更する。Docker 内から LiteLLM を使う場合の既定値は `http://litellm:4000/v1`。
-4. ホスト側の公開ポートを変えたい場合は `NEMO_GUARDRAILS_HOST_PORT` を変更する。既定値は `4080`。
+4. ホスト側の公開バインド先を変更したい場合は `NEMO_GUARDRAILS_HOST_BIND` を変更する。既定値は `127.0.0.1` で、Docker ホストからのみ直接アクセスを受け付ける。
+5. ホスト側の公開ポートを変えたい場合は `NEMO_GUARDRAILS_HOST_PORT` を変更する。既定値は `4080`。
+6. ブラウザ経由の利用元を絞りたい場合は `NEMO_GUARDRAILS_SERVER_ALLOWED_ORIGINS` を変更する。既定値は localhost / 127.0.0.1 系の origin のみに制限している。
 
 ## Run
 
@@ -77,3 +79,5 @@ curl -X POST http://localhost:4080/v1/chat/completions \
 - NeMoGuard の専用 safety model、topic control、jailbreak detection は後続拡張で追加できます。
 - `--disable-chat-ui` を指定しているため、UI ではなく API 利用を前提としています。
 - コンテナ内部では引き続き `8000` で待ち受けます。同一 Docker network 上の他サービスは `http://nemo-guardrails:8000` を利用できます。
+- 既定の `ports` 設定は `127.0.0.1:${NEMO_GUARDRAILS_HOST_PORT}:8000` なので、Docker network 内の疎通は維持しつつ、外部ホストからの直接到達は抑止できます。別ホストからの到達が必要な場合のみ `NEMO_GUARDRAILS_HOST_BIND=0.0.0.0` を明示してください。
+- CORS は既定で localhost / 127.0.0.1 系 origin のみを許可します。Docker 内のサーバー間通信には CORS は影響せず、これはブラウザからのクロスオリジン呼び出し制御です。

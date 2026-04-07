@@ -22,7 +22,7 @@ services:
     volumes:
       - ./configs:/config:ro
     ports:
-      - "${NEMO_GUARDRAILS_HOST_PORT:-4080}:8000"
+      - "${NEMO_GUARDRAILS_HOST_BIND:-127.0.0.1}:${NEMO_GUARDRAILS_HOST_PORT:-4080}:8000"
     command:
       [
         "nemoguardrails",
