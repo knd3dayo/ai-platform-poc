@@ -108,10 +108,27 @@ uv --directory ./app run -m ai_chat_util.cli \
 
 ### 3. HITL / 再開確認
 
+固定回帰シナリオ:
+
+- approval 停止制御の固定回帰シナリオは、absolute path を含む local directory / file 問い合わせを採用する。
+- 特に local directory 確認では、absolute path を含む問い合わせの方が `route.explicit_directory_path_request` まで含めて再現性が高い。
+
+```bash
+cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
+./run-ai-chat-util.sh --config ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.hitl.poc.yml \
+  agent_chat -p "次の Markdown ファイルを確認して検証目的を要約してください: /home/user/source/repos/ai-platform-poc/docs/11_技術課題検証/A-01-02_スーパーバイザーのツール選択とMCP結果判断の検証.md"
+```
+
 期待結果:
 
-- clarification または approval が必要なケースで `paused` が返る。
+- `general_tool_agent -> analyze_files` が選択され、未承認のままツール実行は行われない。
+- approval が必要なケースで `paused` が返る。
 - trace_id を維持して再送できる。
+
+補足:
+
+- generic な `work ディレクトリを確認してください` も現時点では `general_tool_agent -> analyze_files -> paused` を再現できているが、reason code が `route.explicit_directory_path_request` に固定されない。
+- そのため、approval 停止制御の固定検証ケースとしては、absolute path を含む問い合わせを優先採用する。
 
 ### 4. 異常系確認
 
@@ -181,9 +198,186 @@ cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
 | 異常系 | 確認済み | 修正前は stdio 子プロセス起動時に `No such file or directory` と `Connection closed` で失敗することを観測した。 |
 | 運用系 | 一部確認済み | PoC 設定では `${HOME}` や LiteLLM 公開モデル名との不整合が実行成立性に影響するため、絶対パスと公開モデル名へ揃える運用が必要である。 |
 
+### 2026-04-07 追試結果
+
+実行コマンド 1:
+
+```bash
+cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
+./run-ai-chat-util.sh --config ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.normal-only.poc.yml \
+  agent_chat -p "読み込まれている設定ファイルの場所を教えてください"
+```
+
+実行結果:
+
+- `Creating normal agent for MCP server 'normal-tools'...` を確認した。
+- `Resolved tool catalog: route=general_tool_agent ...` を確認した。
+- `litellm.acompletion(model=openai/poc-chat-model) 200 OK` を確認した。
+- `Post-close evidence check ... config_path=/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.normal-only.poc.yml` を確認した。
+- 最終応答として、設定ファイル実パス `/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.normal-only.poc.yml` を返した。
+
+評価:
+
+- 2026-04-05 時点で確認した normal-only 正常系は、現在の PoC 環境でも再現した。
+- A-04-03 の主入口である `agent_chat` と normal-tools MCP の接続、supervisor による tool catalog 解決、LiteLLM 応答、最終統合応答までは継続して成立している。
+
+実行コマンド 2:
+
+```bash
+cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
+./run-ai-chat-util.sh --config ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.hitl.poc.yml \
+  agent_chat -p "work ディレクトリを確認してください"
+```
+
+実行結果:
+
+- `route_name=general_tool_agent` で `analyze_files` が選択された。
+- `tool_selected` / `tool_result_received` では `approval_status: "required"` を記録した。
+- しかし同じ trace (`11cb5b423e3744528057d64740716392`) の監査ログでは、その後 `sufficiency_judged` が `decision: "answerable"`、`requires_hitl: false`、`requires_approval: false` となり、`final_status: "completed"` で終了した。
+- CLI 出力も `paused` ではなく、`work` ディレクトリの内容要約を返して完了した。
+
+評価:
+
+- approval 対象ツールを設定しても、現行の CLI `agent_chat` 経路では `paused` へ収束せず、結果的に supervisor が回答完了まで進んでしまうケースを観測した。
+- したがって、A-04-03 の normal-only 正常系は確認済みだが、主入口 `agent_chat` における approval / 非同期 HITL 制御まで「確認済み」とはまだ言えない。
+- 過去の `structured-routing-hitl-audit.jsonl` には `hitl_requested` と `final_status: "paused"` の記録も残っており、少なくとも環境または実装差分により挙動が揺れている。
+
+### ai-chat-util チーム調査結果と修正内容
+
+ai-chat-util チームに確認したところ、現行の approval 停止制御は `tool_selected` / `tool_result_received` に記録される `approval_status` へ直接連動しておらず、実際の `paused` 収束条件は supervisor 最終出力が question かつ approval HITL として解釈された場合に限られていた。
+
+そのため、approval 対象ツールに対して `approval_status: required` が監査ログへ残っていても、ツール実行自体はコード上ブロックされず、supervisor がそのまま complete を返すと `sufficiency_judged` は `answerable` へ倒れ、`final_status: completed` に収束し得る状態だった。今回の completed 側 trace はこの経路と一致し、過去の paused 側 trace はモデルがプロンプトどおりに approval 質問を返したケースだった。すなわち、同一実装上で挙動がモデル応答依存になっていた。
+
+チーム判断としては、現行プロンプト文言と `hitl_approval_tools` の意味から、approval 対象ツールは実行前に pause すべきである。これを踏まえ、次の最小修正を ai-chat-util 側へ適用したとの回答を得た。
+
+- approval 対象ツールは未承認のまま実行せず、tool guard で deterministic にブロックする。
+- approval-required シグナルが evidence に現れた場合、supervisor が complete を返していても `paused` へ強制収束させる。
+- `APPROVE TOOL_NAME` を受けた再開ターンでは、そのツールのみ実行を許可する。
+- 上記を固定する回帰テストを追加する。
+
+修正対象ファイル:
+
+- `app/src/ai_chat_util/base/agent/tool_limits.py`
+- `app/src/ai_chat_util/base/agent/agent_client.py`
+- `app/src/ai_chat_util/base/agent/agent_client_util.py`
+- `app/src/ai_chat_util/base/agent/agent_builder.py`
+- `app/src/ai_chat_util/base/agent/_test_/test_tool_guard_wrapping.py`
+
+テスト結果:
+
+- approval 回帰テスト 2 件を個別実行して成功した。
+- 同一テストファイル全体には今回の変更と無関係な既存失敗が混在するため、フルファイル通しではなく新規ケース単位で確認した。
+
+### 2026-04-07 修正反映後の live 再追試
+
+実行コマンド 3:
+
+```bash
+cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
+./run-ai-chat-util.sh --config ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.hitl.poc.yml \
+  agent_chat -p "work ディレクトリを確認してください"
+```
+
+実行結果:
+
+- `trace_id=4343d83097174ac9b16e4815d9a97e27` では、route が `general_tool_agent` ではなく `deep_agent` に決定された。
+- 監査ログ上、`tool_selected` / `tool_result_received` の approval 系イベントは発生せず、`sufficiency_judged` は `answerable`、`final_status` は `completed` だった。
+- CLI 出力も `paused` ではなく完了応答だった。
+
+評価:
+
+- 同じ structured-routing + HITL 設定でも、generic な `work ディレクトリ` 問い合わせは route 判定次第で `deep_agent` へ流れ、今回修正した `general_tool_agent -> analyze_files` の approval 停止経路を通らない。
+- したがって、この問い合わせ文だけでは approval 停止修正の live 検証ケースとして安定しない。
+
+実行コマンド 4:
+
+```bash
+cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
+./run-ai-chat-util.sh --config ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.hitl.poc.yml \
+  agent_chat -p "次の Markdown ファイルを確認して検証目的を要約してください: /home/user/source/repos/ai-platform-poc/docs/11_技術課題検証/A-01-02_スーパーバイザーのツール選択とMCP結果判断の検証.md"
+```
+
+実行結果:
+
+- `trace_id=afb42032789e438ebe1293680edfb66d` では、route が `general_tool_agent` に決定された。
+- `tool_selected` で `analyze_files` に `approval_status: required` が記録された。
+- `tool_result_received` は `reason_code: hitl.tool_approval_required`、`payload.success: false`、`blocked: true` となり、未承認のままツール実行は行われなかった。
+- 続く `sufficiency_judged` は `reason_code: sufficiency.approval_required`、`requires_hitl: true`、`requires_approval: true` となり、`hitl_requested`、`final_status: paused` へ収束した。
+- CLI でも `ツール analyze_files の実行には承認が必要です。` と表示され、`HITL> ` プロンプトで停止した。
+
+評価:
+
+- `general_tool_agent -> analyze_files` の approval 対象経路では、今回の最小修正により deterministic な事前ブロックと `paused` 収束が live でも確認できた。
+- 一方で、A-04-03 の generic なディレクトリ調査問い合わせは route が `deep_agent` へ揺れるため、approval 停止修正そのものとは別に、検証シナリオの固定化または route 条件の整理が必要である。
+
+### 2026-04-07 追加再検証
+
+ai-chat-util チームが推奨した追加 live 確認ケース 3 件を、現行の structured-routing + HITL 設定で再実行した。なお現在の routing prompt には、ローカルディレクトリパスや `working_directory` 配下で解決できるディレクトリ名の単発調査は `general_tool_agent` を優先する旨が入っている。
+
+実行コマンド 5:
+
+```bash
+cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
+./run-ai-chat-util.sh --config ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.hitl.poc.yml \
+  agent_chat -p "work ディレクトリを確認してください"
+```
+
+実行結果:
+
+- `trace_id=f0a4abbe22ad4e40b67b62a9b88c03ff` の初回 turn では、route が `general_tool_agent` に決定された。
+- `route_decision_model_output.reason_code` は ai-chat-util チーム想定の `route.explicit_directory_path_request` ではなく `route.directory_check`、`route_decided.reason_code` は `route.general_tool_sufficient` だった。
+- `tool_selected.tool_name=analyze_files`、`tool_result_received.reason_code=hitl.tool_approval_required`、`final_status=paused` を確認した。
+
+評価:
+
+- generic な `work ディレクトリ` 問い合わせでも、現在は `general_tool_agent -> analyze_files -> paused` の approval 検証経路へ入ることを live で再確認した。
+- 一方で、reason code は期待されていた explicit-directory 系ではなく、より汎用的な `general_tool_sufficient` 系に分類されている。
+
+実行コマンド 6:
+
+```bash
+cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
+./run-ai-chat-util.sh --config ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.hitl.poc.yml \
+  agent_chat -p "/home/user/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/work ディレクトリを確認してください"
+```
+
+実行結果:
+
+- `trace_id=3ac7c869887d4012afa6525889d50187` の初回 turn では、route が `general_tool_agent` に決定された。
+- `route_decided.reason_code=route.explicit_directory_path_request` を確認した。
+- `tool_selected.tool_name=analyze_files`、`tool_result_received.reason_code=hitl.tool_approval_required`、`final_status=paused` を確認した。
+
+評価:
+
+- absolute path を明示した local directory 確認は、ai-chat-util チームの期待どおり `general_tool_agent` と explicit-directory 系 reason code へ安定して寄り、approval 検証ケースとして引き続き利用できる。
+
+実行コマンド 7:
+
+```bash
+cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
+./run-ai-chat-util.sh --config ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.hitl.poc.yml \
+  agent_chat -p "work ディレクトリ全体を起点に深く調査してください"
+```
+
+実行結果:
+
+- `trace_id=23695bee2d404b4fb8ba5f217b619f4d` では、route が `deep_agent` に決定された。
+- `route_decided.reason_code=route.multi_step_investigation_needed`、`sufficiency_judged.reason_code=sufficiency.answer_supported_by_evidence`、`final_status=completed` を確認した。
+
+評価:
+
+- 単発確認要求と「深く調査してください」の境界は live でも分かれており、深掘り依頼では `deep_agent` に寄る余地が維持されている。
+
+総合評価:
+
+- ai-chat-util チームが示した受け入れ基準のうち、「単発の local directory 確認要求が stable に `general_tool_agent -> analyze_files` 経路へ入ること」は、generic 問い合わせと absolute path 問い合わせの両方で概ね満たされた。
+- 残差は、generic な `work ディレクトリ` 問い合わせで reason code が `route.explicit_directory_path_request` ではなく `route.general_tool_sufficient` 系に分類される点である。
+- approval 検証の固定シナリオとしては、absolute path 問い合わせを正式採用する。generic な `work ディレクトリ` 問い合わせは補助的な確認ケースとして扱う。
+
 ## 残課題
 
 - DeepAgents 実装との比較観点を A-04-04 で別途整理する必要がある。
 - cross-type 自動 reroute は A-01-03 の残課題として残る。
+- `general_tool_agent -> analyze_files` の approval 停止制御は live でも確認でき、単発 local directory 確認要求も概ね安定した。ただし generic な `work ディレクトリ` 問い合わせは reason code が explicit-directory 系に固定されておらず、route 分類観点の整理余地がある。
 - end-to-end の非同期 HITL 運用は BFF / 状態管理 DB との接続を含めて別途確認が必要である。
 - MCP 設定と LiteLLM 設定の整合を環境ごとに自動検査する仕組みは未整備である。
