@@ -53,7 +53,7 @@
 | API / facade | `${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/core/app.py` の `run_mermaid_workflow_from_file` | Markdown / Mermaid から workflow 実行へ接続 |
 | workflow 実装 | `${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/workflow/chat_client.py`、`${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/workflow/workflow/runner.py` | LangGraph ベースの実行本体 |
 | サンプル資産 | `${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/workflow/samples/data/sample2.md` | WF 型の検証用定義 |
-| Coordinator 経由 | `${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/core/app.py` の `run_coordinated_chat` | workflow_file_path 指定時の WF 型選択 |
+| agent_chat 経由 | `${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/core/app.py` の `run_agent_chat`、`${HOME}/source/repos/ai-chat-util/app/src/ai_chat_util/base/agent/agent_client.py` | workflow_file_path 指定時の WF 型選択 |
 
 ## 既存実装と入口の対応づけ
 
@@ -67,9 +67,9 @@
 - `run_mermaid_workflow_from_file`
 - `execute_workflow_markdown`
 
-3. MCP / Coordinator 経由
+3. agent_chat routing 経由
 
-- `run_coordinated_chat` に `workflow_file_path` を与えた場合、WF 型候補として選択される。
+- `agent_chat` に `workflow_file_path` を与えた場合、WF 型候補として選択される。
 - 明示的な workflow 定義なしでは、WF 型へ自動接続しない制約がある。
 
 ## 前提条件
@@ -163,11 +163,33 @@ uv run pytest src/ai_chat_util/_test_/test_coordinator_entrypoints.py -q
 実行結果:
 
 - `7 passed in 18.73s`
-- `workflow_file_path` 指定時の WF 型選択、`cross_type_route_decided` 監査イベント、clarification 遷移を確認した。
+- `workflow_file_path` 指定時の WF 型選択、旧 Coordinator 入口の契約、clarification 遷移を確認した。
 
 補足:
 
-- 今回は workflow 実装本体と Coordinator 入口の実測を優先し、実 LLM を使った `run_workflow` CLI の end-to-end 実行までは行っていない。
+- この結果は仕様変更前の旧入口に対する確認である。
+
+### 2026-04-07 仕様変更追随再検証結果
+
+実行コマンド:
+
+```bash
+cd ${HOME}/source/repos/ai-chat-util/app
+uv run pytest src/ai_chat_util/_test_/test_workflow_backend_entrypoints.py src/ai_chat_util/workflow/_test_/test_langgraph_workflow.py -q
+```
+
+実行結果:
+
+- `15 passed in 6.75s`
+- `agent_chat` への workflow backend 統合後も、次を確認した。
+  - `workflow_file_path` 指定時に workflow backend が選択されること。
+  - API `/agent_chat` は利用可能で、`/coordinated_chat` は削除済みであること。
+  - CLI `agent_chat` は workflow 関連オプションを受理し、`coordinated_chat` は拒否されること。
+  - LangGraph workflow 実装本体の plan / pause / resume 契約が維持されていること。
+
+補足:
+
+- 今回は workflow 実装本体と `agent_chat` 入口の実測を優先し、実 LLM を使った `run_workflow` CLI の end-to-end 実行までは行っていない。
 
 ### 2026-04-07 追試結果
 

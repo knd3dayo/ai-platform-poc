@@ -54,7 +54,7 @@
 | インフラ | `${HOME}/source/repos/ai-platform-poc/infra/22-dify` | Dify compose 資材 |
 | 起動確認 | [I-01-08_22-difyのDocker作成起動手順確認の検証.md](./I-01-08_22-difyのDocker作成起動手順確認の検証.md) | Dify 基盤の前提 |
 | 運用前提 | `docs/98_検討資料/修正版_技術メモ_ワークフローの状態管理と非同期HITLについて.md` | Human Input 前提 |
-| ai-chat-util との関係 | `${HOME}/source/repos/ai-chat-util/README_FOR_EXPERTS.md` の Cross-type Coordinator / workflow 記述 | Dify は主に疎結合連携先 |
+| ai-chat-util との関係 | `${HOME}/source/repos/ai-chat-util/README_FOR_EXPERTS.md` の agent_chat workflow backend 記述 | Dify は主に疎結合連携先 |
 
 ## 既存実装と入口の対応づけ
 
@@ -65,7 +65,7 @@
 
 2. ai-chat-util 側との接続候補
 
-- `coordinated_chat` が WF 型を選んだ後、将来的に Dify workflow へ委譲する構成余地がある。
+- `agent_chat` が workflow backend を選んだ後、将来的に Dify workflow へ委譲する構成余地がある。
 - ただし現時点の ai-chat-util 既定 WF 型は LangGraph ベースであり、Dify は別実装基盤として扱う。
 
 3. 本リポジトリ側の既存根拠

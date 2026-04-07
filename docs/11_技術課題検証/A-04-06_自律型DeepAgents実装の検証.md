@@ -50,7 +50,7 @@
 | 観点 | 主な既存実装 / 入口 | 備考 |
 | --- | --- | --- |
 | 明示入口 | `${HOME}/source/repos/ai-chat-util/README_FOR_EXPERTS.md` に記載の `run_deepagent_chat` | 自律型候補の入口 |
-| route 選択 | `type_selection_autonomous_on_explicit_deep_request`、`type_selection_autonomous_on_high_exploration` | Coordinator 側の自律型選択条件 |
+| route 選択 | `type_selection_autonomous_on_explicit_deep_request`、`type_selection_autonomous_on_high_exploration` | `agent_chat` routing 側の自律型選択条件 |
 | supervisor 内 route | `deep_agent` route | SV 型内委譲先としても利用 |
 | 依存導入 | `uv sync --extra deepagents` | 追加依存 |
 
@@ -60,9 +60,9 @@
 
 - `run_deepagent_chat` は DeepAgents を明示的に起動する入口である。
 
-2. Coordinator との関係
+2. agent_chat routing との関係
 
-- `coordinated_chat` は明示的な deep request や高探索性を見て自律型候補を選べる。
+- `agent_chat` は明示的な deep request や高探索性を見て自律型候補を選べる。
 - その際の backend 候補として DeepAgents を位置付けられる。
 
 3. 現時点の制約
@@ -131,6 +131,27 @@ uv run pytest src/ai_chat_util/_test_/test_deepagent_entrypoints.py -q
 
 - 自律型として重要な停止条件、予算上限、成果物レビュー接続までは今回の入口テストでは検証していない。
 - したがって、DeepAgents を自律型の実装基盤として完全に確認したのではなく、少なくとも明示入口と公開契約が成立している段階を確認した。
+
+### 2026-04-07 仕様変更追随再検証結果
+
+実行コマンド:
+
+```bash
+cd ${HOME}/source/repos/ai-chat-util/app
+uv run pytest src/ai_chat_util/_test_/test_deepagent_entrypoints.py -q
+```
+
+実行結果:
+
+- `10 passed in 6.49s`
+- 次の観点を再確認した。
+  - `run_deepagent_chat` の明示入口は引き続き利用可能であること。
+  - CLI、API、MCP から DeepAgents 系入口へ到達できること。
+  - workflow backend の `agent_chat` 統合後も、DeepAgents 明示入口と batch 系補助入口の公開契約は崩れていないこと。
+
+補足:
+
+- 今回の仕様変更は `coordinated_chat` 廃止と `agent_chat` 統合が中心であり、`run_deepagent_chat` 系の明示入口自体は後方互換影響を受けていない。
 
 | 項目 | 結果 | 補足 |
 | --- | --- | --- |
