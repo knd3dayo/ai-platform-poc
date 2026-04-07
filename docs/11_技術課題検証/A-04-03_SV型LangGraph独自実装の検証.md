@@ -376,8 +376,15 @@ cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
 
 ## 残課題
 
-- DeepAgents 実装との比較観点を A-04-04 で別途整理する必要がある。
-- cross-type 自動 reroute は A-01-03 の残課題として残る。
-- `general_tool_agent -> analyze_files` の approval 停止制御は live でも確認でき、単発 local directory 確認要求も概ね安定した。ただし generic な `work ディレクトリ` 問い合わせは reason code が explicit-directory 系に固定されておらず、route 分類観点の整理余地がある。
-- end-to-end の非同期 HITL 運用は BFF / 状態管理 DB との接続を含めて別途確認が必要である。
-- MCP 設定と LiteLLM 設定の整合を環境ごとに自動検査する仕組みは未整備である。
+残件は、A-04-03 本体で追うものと他論点へ切り出すものを次のように整理する。
+
+### A-04-03 本体に残る論点
+
+- `general_tool_agent -> analyze_files` の approval 停止制御は live で確認できたが、generic な `work ディレクトリ` 問い合わせは reason code が explicit-directory 系に固定されていない。残差は route 分類ラベルの整理である。
+
+### 別論点として扱うもの
+
+- DeepAgents 実装との差分整理は A-04-04 で扱う。
+- cross-type 自動 reroute は A-01-03 の残課題として扱う。
+- end-to-end の非同期 HITL 運用は、BFF / 状態管理 DB との接続を含むため別途の運用検証で扱う。
+- MCP 設定と LiteLLM 設定の整合を環境ごとに自動検査する仕組みは、実装改善として別途検討する。

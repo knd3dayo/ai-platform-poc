@@ -144,8 +144,124 @@ uv run pytest src/ai_chat_util/_test_/test_deepagent_entrypoints.py -q
 | 異常系 | 一部確認済み | 入口未登録や parser 未対応のような基本破綻がないことは確認済み。fallback 条件の end-to-end 確認は未実施。 |
 | 運用系 | 一部確認済み | 追加依存導入後の公開契約は確認済み。監査出力や route 選択結果の実測は未実施。 |
 
+### 2026-04-07 追試結果
+
+実装・設定の確認:
+
+- `README_FOR_EXPERTS.md` には、`run_deepagent_chat` を CLI / API / FastMCP から利用できること、`deep_agent` route でも `route_decided` / `tool_catalog_resolved` / `final_answer_validated` の audit event が維持されることが明記されている。
+- `deep_agent_support.py` では、`deep_agent` route に `deepagents` パッケージが必須であり、system prompt 上も `execute` / `status` / `get_result` / `workspace_path` / `cancel` を使わない制約が固定されている。
+- `agent_client_util.py` では、`routing_decision.selected_route == "deep_agent"` の場合に `create_deep_agent_workflow()` を構築し、`tool_catalog_resolved` に DeepAgents 側へ公開したツール一覧を記録する実装になっている。
+
+回帰テスト実行コマンド 1:
+
+```bash
+cd ${HOME}/source/repos/ai-chat-util/app
+uv run pytest src/ai_chat_util/_test_/test_deepagent_entrypoints.py -q
+```
+
+実行結果:
+
+- `10 passed in 11.76s`
+- CLI / API / MCP の明示入口契約は引き続き維持されている。
+
+回帰テスト実行コマンド 2:
+
+```bash
+cd ${HOME}/source/repos/ai-chat-util/app
+uv run pytest src/ai_chat_util/base/agent/_test_/test_tool_guard_wrapping.py -q \
+  -k 'mcp_client_chat_emits_deep_agent_audit_events or default_routing_prefers_deep_agent_for_explicit_request_when_enabled or default_routing_does_not_select_deep_agent_when_disabled'
+```
+
+実行結果:
+
+- `2 passed, 1 failed, 120 deselected`
+- `default_routing_prefers_deep_agent_for_explicit_request_when_enabled`
+- `default_routing_does_not_select_deep_agent_when_disabled`
+  は通過した。
+- 一方で `test_mcp_client_chat_emits_deep_agent_audit_events` は `ModuleNotFoundError: No module named 'ai_chat_util.base.agent.mcp_client'` で失敗した。
+
+評価:
+
+- DeepAgents の route 優先・無効化境界の回帰は維持されている。
+- ただし audit event の自動テストには、現行モジュール構成に追随できていない既存失敗が残っている。
+
+live 実行コマンド 1: supervisor 内 route としての DeepAgents
+
+```bash
+cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
+./run-ai-chat-util.sh --config ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.poc.yml \
+  agent_chat -p "deep-agent を使って docs 配下の共通見出しを段階的に調査してください"
+```
+
+実行結果:
+
+- `trace_id=86aa28f636f14b27bfae1d6dc883979a`
+- `route_decided.route_name=deep_agent`
+- `route_decided.reason_code=route.multi_step_investigation_needed`
+- `tool_catalog_resolved.payload.tool_agent_names=["deep_agent"]`
+- `tool_catalog_resolved.payload.tool_catalog[0].tool_names=["healthz", "get_loaded_config_info", "analyze_files", "analyze_pdf_files", "analyze_image_files"]`
+- `final_status=completed`
+
+評価:
+
+- structured routing 配下で `deep_agent` backend が live に選択され、監査ログにも DeepAgents 専用の tool catalog が記録されることを確認した。
+- 一方で最終応答は `docs` 配下を見つけられず、内容面では期待した「共通見出しの段階的調査」には至らなかった。
+
+live 実行コマンド 2: DeepAgents 明示入口
+
+```bash
+cd ${HOME}/source/repos/ai-chat-util
+uv --directory ./app run -m ai_chat_util.cli \
+  --config ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.poc.yml \
+  run_deepagent_chat -p "docs 配下の共通見出しを段階的に調査してください"
+```
+
+実行結果:
+
+- `trace_id=76e8ccfaf36c4d0796c6fcbe5dfc7c9e`
+- `route_decided.route_name=deep_agent`
+- `route_decided.payload.forced_route=deep_agent`
+- `tool_catalog_resolved.payload.tool_agent_names=["deep_agent"]`
+- `final_status=completed`
+
+評価:
+
+- `run_deepagent_chat` の明示入口でも、supervisor 内 route ではなく forced deep route として実行されることを監査ログで確認した。
+- 明示入口と SV 型内部 route の使い分けは、`forced_route=deep_agent` の有無で区別できる。
+
+live 実行コマンド 3: DeepAgents 明示入口 + absolute path
+
+```bash
+cd ${HOME}/source/repos/ai-chat-util
+uv --directory ./app run -m ai_chat_util.cli \
+  --config ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.poc.yml \
+  run_deepagent_chat -p "/home/user/source/repos/ai-platform-poc/docs ディレクトリを段階的に調査し、共通見出しの傾向を説明してください"
+```
+
+実行結果:
+
+- `trace_id=eacb0a96bb2c4b59a8c234d4f9ba9412`
+- `route_decided.route_name=deep_agent`
+- `route_decided.payload.forced_route=deep_agent`
+- `route_decided.payload.explicit_user_directory_paths=["/home/user/source/repos/ai-platform-poc/docs"]`
+- `tool_catalog_resolved.payload.tool_agent_names=["deep_agent"]`
+- `final_status=completed`
+
+評価:
+
+- absolute path を明示しても、DeepAgents 明示入口は expected route と audit contract を維持した。
+- ただし応答本文は依然として `docs` ディレクトリを空と見なしており、DeepAgents の path 解釈またはディレクトリ展開品質は追加確認が必要である。
+
+総合評価:
+
+- DeepAgents の CLI / API / MCP 明示入口、SV 型内部 route、audit contract、enable/disable の基本境界は確認できた。
+- `deep_agent` route が `execute` / `status` / `get_result` を使わず、非同期ジョブ系を `coding_agent` 側へ残す設計根拠も、README と system prompt 実装で確認できた。
+- 一方で live の内容品質としては、既存ディレクトリを空または未検出と返すケースがあり、「深い調査で期待した実成果が取れるか」はまだ十分に確認できていない。
+
 ## 残課題
 
-- `run_deepagent_chat` を使った明示入口と、SV 型内部 route としての利用をどう使い分けるか整理が必要である。
-- DeepAgents を SV 型として採用する場合の停止条件、予算上限、監査出力は追加検証が必要である。
+- `run_deepagent_chat` は forced deep route、`agent_chat` の `deep_agent` は SV 型内部 route として使い分けられることは確認できたが、利用ガイドとしてどの要求をどちらへ寄せるかの整理はなお必要である。
+- DeepAgents を SV 型として採用する場合の停止条件、予算上限、監査出力の運用基準は追加検証が必要である。
+- live 実行では既存ディレクトリを空または未検出と返すケースがあり、DeepAgents の path 解釈・ディレクトリ展開品質は追加確認が必要である。
+- `test_mcp_client_chat_emits_deep_agent_audit_events` は現行モジュール構成に追随できていない既存失敗があり、監査回帰テストの保守が必要である。
 - 自律型としての DeepAgents は A-04-06 で別途整理する。
