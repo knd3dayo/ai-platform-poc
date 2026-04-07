@@ -169,14 +169,95 @@ uv run pytest src/ai_chat_util/_test_/test_coordinator_entrypoints.py -q
 
 - 今回は workflow 実装本体と Coordinator 入口の実測を優先し、実 LLM を使った `run_workflow` CLI の end-to-end 実行までは行っていない。
 
+### 2026-04-07 追試結果
+
+実行コマンド 3:
+
+```bash
+cd ${HOME}/source/repos/ai-chat-util/app
+uv run -m ai_chat_util.cli run_workflow -f ./not-found.md -m "test"
+```
+
+実行結果:
+
+- `FileNotFoundError: [Errno 2] No such file or directory: '/home/user/source/repos/ai-chat-util/app/not-found.md'`
+- workflow 定義ファイルが存在しない場合、WF 実行へ進まず即時失敗することを確認した。
+
+実行コマンド 4:
+
+```bash
+cd ${HOME}/source/repos/ai-chat-util/app
+uv run -m ai_chat_util.cli run_workflow \
+  -f src/ai_chat_util/workflow/samples/data/sample2.md \
+  -m "work ディレクトリを確認してください"
+```
+
+実行結果:
+
+- 既定設定の `ai-chat-util-config.yml` では `completion_model: gpt-4o` が使われ、現在の LiteLLM Proxy 公開モデル名 `poc-chat-model` と一致せず `400 BadRequest` で失敗した。
+- WF 実装本体の欠陥ではなく、PoC 環境でのモデル名同期が前提条件であることを確認した。
+
+実行コマンド 5:
+
+```bash
+cd ${HOME}/source/repos/ai-chat-util/app
+tmp=$(mktemp /tmp/a401-config.XXXX.yml)
+cp ai-chat-util-config.yml "$tmp"
+sed -i 's/completion_model: gpt-4o/completion_model: poc-chat-model/' "$tmp"
+uv run -m ai_chat_util.cli --config "$tmp" run_workflow \
+  -f src/ai_chat_util/workflow/samples/data/sample2.md \
+  -m "work/a401_cli ディレクトリを確認してください"
+```
+
+実行結果:
+
+- `litellm.acompletion(model=openai/poc-chat-model) 200 OK` を複数回確認した。
+- `Workflow completed thread_id=5c2143c4-e305-4cd9-a202-156449fe0a32 node_count=6` まで到達した。
+- 最終出力として `特に問題となる点や追加の分析が必要なく、ディレクトリの確認と設定情報の取得で十分であるため、作業を終了します。` を返し、WF 型の同期ワンショット実行が完走することを確認した。
+
+補足:
+
+- 元の `work` 配下では `.xlsx` を含むファイルが `analyze_files` 対象に入り、`LibreOffice binary not found` で失敗した。
+- このため、WF 基盤の成立性確認では Office 変換依存を避けるためにプレーンテキストのみの検証用ディレクトリ `work/a401_cli` を用いた。
+
+実行コマンド 6:
+
+```bash
+cd ${HOME}/source/repos/ai-chat-util/app
+tmp=$(mktemp /tmp/a401-config.XXXX.yml)
+cp ai-chat-util-config.yml "$tmp"
+sed -i 's/completion_model: gpt-4o/completion_model: poc-chat-model/' "$tmp"
+uv run -m ai_chat_util.cli --config "$tmp" run_workflow_durable \
+  -f src/ai_chat_util/workflow/samples/data/sample2.md \
+  -m "work ディレクトリを確認してください" \
+  --plan-mode
+```
+
+実行結果:
+
+- `litellm.acompletion(model=openai/poc-chat-model) 200 OK` を確認した。
+- 更新済み Markdown 案を生成した上で `[HITL:APPROVAL] (workflow:plan)` を返し、plan mode と durable pause 契約が CLI でも成立することを確認した。
+
+実装反映（2026-04-07）:
+
+- `ai-chat-util-config.yml` の既定モデル名を `poc-chat-model` / `poc-embedding-model` へ更新し、一時設定なしでも self-host LiteLLM 前提の既定設定で動かせる状態にした。
+- LibreOffice がない環境では、Word / Excel / PowerPoint を既存ライブラリで直接テキスト抽出するフォールバックを `llm_message_content_factory.py` に追加した。
+- 追試として、既定設定のまま `run_workflow -m "work/a401_cli ディレクトリを確認してください"` を実行し、`Workflow completed` まで完走することを確認した。
+- あわせて、`analyze_files -i /home/user/source/repos/ai-chat-util/app/work/agent_batch_input.xlsx ...` でも `LibreOffice is unavailable. Falling back to direct office text extraction` ログと応答本文を確認し、Excel 解析の成立性を確認した。
+- README / README_FOR_EXPERTS も更新し、self-host LiteLLM の既定モデル名、LibreOffice なしの Office 解析フォールバック、workflow サンプル利用時は具体的な対象ディレクトリを与えることを明記した。
+- 追加追試として `work/a401_office/sample.docx` と `work/a401_office/sample.pptx` に対しても `analyze_files` を実行し、Word / PowerPoint でも同じフォールバックで内容要約できることを確認した。
+- `sample2.md` にはダミーパス生成禁止、実在パスのみを `analyze_files` に渡すこと、既定ケースでは `work` ではなく具体的な対象ディレクトリを与えるべき旨を補強した。
+- あわせて `analyze_files` 側でも unsupported ファイルのスキップ、hidden / internal ファイルの除外、過大ディレクトリ入力の抑制を追加し、検証サンプルで遭遇した `.ai_chat_util` 内部 JSON や巨大入力起因の失敗を緩和した。
+
 | 項目 | 結果 | 補足 |
 | --- | --- | --- |
-| 正常系 | 一部確認済み | workflow 実装テスト 9 件、Coordinator 入口テスト 7 件が通過した。 |
-| 異常系 | 一部確認済み | 型選択競合時の clarification は確認済み。CLI での不正 workflow ファイル実行は未確認。 |
-| 運用系 | 一部確認済み | `trace_id` と `cross_type_route_decided` 監査イベントは確認済み。workflow 資産管理の運用設計は未確認。 |
+| 正常系 | 確認済み | workflow 実装テスト 9 件、Coordinator 入口テスト 7 件に加え、CLI `run_workflow` 完走と `run_workflow_durable --plan-mode` の承認待ち到達を確認した。 |
+| 異常系 | 確認済み | 不正 workflow ファイル指定で即時失敗し、既定設定のモデル名不一致でも誤実行せず `400 BadRequest` で停止することを確認した。 |
+| 運用系 | 確認済み | workflow 定義を Markdown ファイル資産として再利用し、`thread_id` を伴う完了ログと plan mode の更新後 Markdown を確認した。既定モデル名同期と LibreOffice なしの Office 解析フォールバックも反映済みである。 |
 
 ## 残課題
 
+- `sample2.md` と tool 側制約の補強により、`work ディレクトリを確認してください` でも `analyze_files` が `work` 配下の実在ファイル群を対象に完走することを確認した。一方で、広いディレクトリ入力は解析対象が増えやすいため、検証や運用では `work/a401_cli` のような具体的な対象ディレクトリを明示する方が結果を安定させやすい。
 - generic request から適切な workflow 定義へ自動接続する仕組みは別途必要である。
 - Dify と LangGraph のどちらを WF 型の既定実装とするかはユースケースごとに整理が必要である。
 - 本文書では実行基盤の成立性を扱い、業務ごとの workflow 資産管理規約までは扱わない。
