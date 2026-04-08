@@ -172,4 +172,4 @@ cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
 
 補足:
 
-- 上記の route 揺れは approval 停止制御そのものとは別論点として切り出し、`ai-chat-utilチーム調査依頼_A-04-03_workディレクトリ問い合わせのroute揺れ.md` に整理した。
+- 上記の route 揺れは approval 停止制御そのものとは別論点として切り出し、`ai-chat-utilチーム調査依頼_完了_A-04-03_workディレクトリ問い合わせのroute揺れ.md` に整理した。

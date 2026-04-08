@@ -85,7 +85,7 @@ cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
 ## 関連文書
 
 - `/home/user/source/repos/ai-platform-poc/docs/11_技術課題検証/A-04-03_SV型LangGraph独自実装の検証.md`
-- `/home/user/source/repos/ai-platform-poc/docs/99_その他/ai-chat-utilチーム調査依頼_A-04-03_agent_chat_approval停止制御.md`
+- `/home/user/source/repos/ai-platform-poc/docs/99_その他/ai-chat-utilチーム調査依頼_完了_A-04-03_agent_chat_approval停止制御.md`
 
 ## ai-chat-util チーム回答
 

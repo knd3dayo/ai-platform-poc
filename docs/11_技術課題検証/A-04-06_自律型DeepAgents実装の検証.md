@@ -156,12 +156,27 @@ uv run pytest src/ai_chat_util/_test_/test_deepagent_entrypoints.py -q
 | 項目 | 結果 | 補足 |
 | --- | --- | --- |
 | 正常系 | 一部確認済み | DeepAgents の明示入口と API / MCP 公開契約をテストで確認した。 |
-| 異常系 | 一部確認済み | 明示入口未登録のような基本破綻は確認されなかった。一方で DeepAgents 共通の path 解釈品質には残課題があり、既存ディレクトリを空または未検出と返すケースが別文書で確認されている。 |
-| 運用系 | 一部確認済み | 追加依存と入口契約は確認済み。予算制御とレビュー運用に加え、directory path の解釈品質を前提にした利用ガイド整備が未確認である。 |
+| 異常系 | 一部確認済み | 明示入口未登録のような基本破綻は確認されなかった。absolute directory path を空または未検出と返した DeepAgents 共通事象は upstream で root cause と修正方針が整理済みであり、PoC 側では修正版取り込み後の再確認が残る。 |
+| 運用系 | 一部確認済み | 追加依存と入口契約は確認済み。予算制御とレビュー運用に加え、修正版取り込み後に directory path を concrete target として扱えるかの利用ガイド整備が未確認である。 |
+
+### 2026-04-08 ai-chat-util チーム回答反映
+
+[ai-chat-utilチーム調査依頼_完了_A-04-04_DeepAgentsのdirectory path解釈と展開品質.md](../99_その他/ai-chat-utilチーム調査依頼_完了_A-04-04_DeepAgentsのdirectory path解釈と展開品質.md) に対する回答では、absolute directory path 問題の主因は DeepAgents 実行経路で `explicit_user_directory_paths` の文脈が不足していたことと整理された。
+
+確認できた点:
+
+- directory expansion 本体ではなく、workflow 作成経路と tool 解決経路への directory 文脈伝播不足が主因
+- prompt と sufficiency 判定の双方で、tool evidence の弱い absence claim を補強する修正が入った
+- upstream 追試では trace_id `62638961c2e440dda57eade28caa7468` で `analyze_files` が `docs` 配下 20 件を解析し、共通見出し要約まで到達した
+
+本書への含意:
+
+- 自律型 DeepAgents 明示入口でも、従来の「既存 directory を空または未検出と返す」という残課題は、少なくとも今回の absolute path ケースについて原因未解明ではなくなった。
+- PoC 側の残件は、修正版 ai-chat-util を取り込んだうえで、自律型入口の同一シナリオを再実測し、内容品質の改善を確認することである。
 
 ## 残課題
 
 - standalone DeepAgents の実行結果と supervisor 内 route としての利用結果を分けて比較する必要がある。
-- [A-04-04_SV型DeepAgents実装の検証.md](./A-04-04_SV型DeepAgents実装の検証.md) と [ai-chat-utilチーム調査依頼_A-04-04_DeepAgentsのdirectory path解釈と展開品質.md](../99_その他/ai-chat-utilチーム調査依頼_A-04-04_DeepAgentsのdirectory path解釈と展開品質.md) で確認しているとおり、DeepAgents には既存 directory を空または未検出と返す path 解釈品質の残課題がある。自律型入口でも同系統の影響を受ける前提で扱う必要がある。
+- [A-04-04_SV型DeepAgents実装の検証.md](./A-04-04_SV型DeepAgents実装の検証.md) と [ai-chat-utilチーム調査依頼_完了_A-04-04_DeepAgentsのdirectory path解釈と展開品質.md](../99_その他/ai-chat-utilチーム調査依頼_完了_A-04-04_DeepAgentsのdirectory path解釈と展開品質.md) で確認した absolute directory path 問題は upstream で root cause と修正方針が整理済みである。自律型入口への反映確認は、PoC 側の再実測として残っている。
 - 停止条件、予算上限、成果物レビューのゲートは A-03 系と合わせて具体化が必要である。
 - 本文書では実装基盤の成立性を扱い、モデル能力評価までは扱わない。

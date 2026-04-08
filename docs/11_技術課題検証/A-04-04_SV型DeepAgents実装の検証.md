@@ -250,13 +250,43 @@ uv --directory ./app run -m ai_chat_util.cli \
 評価:
 
 - absolute path を明示しても、DeepAgents 明示入口は expected route と audit contract を維持した。
-- ただし応答本文は依然として `docs` ディレクトリを空と見なしており、DeepAgents の path 解釈またはディレクトリ展開品質は追加確認が必要である。
+- ただし当時の応答本文は `docs` ディレクトリを空と見なしており、PoC 追試時点では DeepAgents 実行経路に追加確認事項が残っていた。
+
+### 2026-04-08 ai-chat-util チーム回答反映
+
+PoC 側から起票した [ai-chat-utilチーム調査依頼_完了_A-04-04_DeepAgentsのdirectory path解釈と展開品質.md](../99_その他/ai-chat-utilチーム調査依頼_完了_A-04-04_DeepAgentsのdirectory path解釈と展開品質.md) に対する回答を受領した。
+
+回答要旨:
+
+- root cause は directory expansion 本体ではなく、DeepAgents 実行経路で `explicit_user_directory_paths` が `create_deep_agent_workflow()` と tool 解決経路へ十分に伝播していなかったことだった。
+- `deep_agent_support.py` の prompt 意図に対して、実行文脈側で concrete target が弱く、`analyze_files` を打たずに「空」「未検出」と要約できてしまう余地があった。
+- さらに sufficiency 判定も、実質的な tool evidence が弱い absence claim を `complete` とみなしやすく、誤結論を残しやすかった。
+
+upstream 修正内容:
+
+- DeepAgents 作成時に `explicit_user_directory_paths` を伝播
+- system prompt に明示 directory path を concrete target として埋め込み
+- directory path を `analyze_files` へそのまま渡すよう指示を明確化
+- tool evidence の弱い「空」「未検出」断定を `complete` 扱いしにくいよう sufficiency 判定を補強
+
+upstream 再現確認結果:
+
+- trace_id `62638961c2e440dda57eade28caa7468`
+- `route_decided.route_name=deep_agent`
+- `explicit_user_directory_paths=["/home/user/source/repos/ai-platform-poc/docs"]`
+- `analyze_files` が実際に呼び出され、`docs` 配下 20 件を解析
+- 最終応答は「空です」「見つかりませんでした」ではなく、共通見出し傾向の要約に到達
+
+評価:
+
+- A-04-04 で切り出していた absolute directory path 問題は、DeepAgents 実行経路の文脈伝播不足が主因だったことが確認できた。
+- したがって、本サブ課題の残件は「原因不明の path 品質問題」ではなく、「修正版 ai-chat-util を PoC 側へ取り込んだうえで同一シナリオを再実測すること」に整理し直す。
 
 総合評価:
 
 - DeepAgents の CLI / API / MCP 明示入口、SV 型内部 route、audit contract、enable/disable の基本境界は確認できた。
 - `deep_agent` route が `execute` / `status` / `get_result` を使わず、非同期ジョブ系を `coding_agent` 側へ残す設計根拠も、README と system prompt 実装で確認できた。
-- 一方で live の内容品質としては、既存ディレクトリを空または未検出と返すケースがあり、「深い調査で期待した実成果が取れるか」はまだ十分に確認できていない。
+- 既存ディレクトリを空または未検出と返した live 事象については、upstream から root cause と修正内容の回答を受領した。PoC 側では修正版取り込み後の再実測が残る。
 
 ### 2026-04-08 追加追試結果
 

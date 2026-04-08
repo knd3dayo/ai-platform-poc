@@ -166,6 +166,45 @@ uv run pytest src/ai_chat_util/workflow/_test_/test_langgraph_workflow.py -k "tr
 | 不正・欠落 trace_id の拒否 | 確認済み | 欠落時と未保存セッション時は例外になる。 |
 | CLI 横断再開 | 未確認 | CLI は同一プロセス内対話に限定される。 |
 
+### 2026-04-08 targeted rerun 状況
+
+同じ targeted test は、2026-04-08 時点の一時点では test collection 時点で circular import による `ImportError` になったが、その後 ai-chat-util チーム側で最小修正が適用され、fresh rerun 可能な状態まで回復した。
+
+実行コマンド:
+
+```bash
+cd ${HOME}/source/repos/ai-chat-util/app
+uv run pytest src/ai_chat_util/workflow/_test_/test_langgraph_workflow.py -k "trace_id or plan or pause or resume" -q
+```
+
+一時失敗時の結果:
+
+- `1 error during collection`
+- `ai_chat_util.workflow.chat_client` と `ai_chat_util.base.agent` の間で circular import が発生し、`WorkflowChatClient` を import できなかった
+
+補足:
+
+- これは Resume プロトコルの設計否定ではなく、現行コードの regression check が一時的に fresh rerun 不能になっていた問題として扱う
+- 起票先: [ai-chat-utilチーム調査依頼_完了_A-02-02_resume_targeted_testのcircular_import.md](../99_その他/ai-chat-utilチーム調査依頼_完了_A-02-02_resume_targeted_testのcircular_import.md)
+
+### 2026-04-08 ai-chat-util チーム回答反映
+
+[ai-chat-utilチーム調査依頼_完了_A-02-02_resume_targeted_testのcircular_import.md](../99_その他/ai-chat-utilチーム調査依頼_完了_A-02-02_resume_targeted_testのcircular_import.md) への回答により、原因、最小修正、再検証結果を確認した。
+
+確認できたこと:
+
+- direct cause は `ai_chat_util.base.agent.agent_client` の top-level import が `WorkflowChatClient` を参照していたこと
+- `ai_chat_util.base.agent.__init__` の eager import は循環を露出しやすくする要因ではあるが、今回の最短原因は `agent_client.py` 側の import だった
+- 最小修正として、`agent_client.py` の `WorkflowChatClient` import を workflow_backend 分岐時のみの遅延解決へ変更した
+- 修正後、報告していた targeted test は `3 passed, 6 deselected` で再通過した
+- あわせて `src/ai_chat_util/_test_/test_workflow_backend_entrypoints.py` も `6 passed` で回帰確認された
+
+本書への含意:
+
+- A-02-02 の historical result は維持される
+- いったん壊れていた Resume 系 targeted regression check も、upstream 修正により回復した
+- したがって、A-02-02 の残課題に circular import 問題を残す必要はない
+
 ## 残課題
 
 - O-02-04 として、BFF から見た再開キー利用の end-to-end 検証を追加する必要がある。
