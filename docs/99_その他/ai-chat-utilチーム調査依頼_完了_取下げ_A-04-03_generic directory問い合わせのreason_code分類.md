@@ -112,3 +112,9 @@ cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
 
 - `/home/user/source/repos/ai-platform-poc/docs/11_技術課題検証/A-04-03_SV型LangGraph独自実装の検証.md`
 - `/home/user/source/repos/ai-platform-poc/docs/99_その他/ai-chat-utilチーム調査依頼_完了_A-04-03_workディレクトリ問い合わせのroute揺れ.md`
+
+## 対応方針
+
+- 本件は不具合調査依頼としては取り下げとする。
+- 理由は、generic な directory 問い合わせでも route と最終状態は期待どおり `general_tool_agent -> analyze_files -> paused` を満たしており、残論点が不具合ではなく reason code ラベル設計の整理に移っているためである。
+- A-04-03 の受け入れ条件にも本件は含めず、必要なら将来の routing ラベル設計メモとしてのみ参照する。

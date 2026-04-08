@@ -174,9 +174,60 @@ uv run pytest src/ai_chat_util/_test_/test_deepagent_entrypoints.py -q
 - 自律型 DeepAgents 明示入口でも、従来の「既存 directory を空または未検出と返す」という残課題は、少なくとも今回の absolute path ケースについて原因未解明ではなくなった。
 - PoC 側の残件は、修正版 ai-chat-util を取り込んだうえで、自律型入口の同一シナリオを再実測し、内容品質の改善を確認することである。
 
+### 2026-04-08 修正版取り込み後の PoC 再実測
+
+上記残件に対して、修正版 ai-chat-util を取り込んだ現行環境で DeepAgents 明示入口の same scenario を再実行した。
+
+回帰テスト実行コマンド:
+
+```bash
+cd ${HOME}/source/repos/ai-chat-util/app
+uv run pytest src/ai_chat_util/_test_/test_deepagent_entrypoints.py -q
+```
+
+実行結果:
+
+- `10 passed in 6.77s`
+
+評価:
+
+- DeepAgents 明示入口の CLI / API / MCP 公開契約は、修正版取り込み後も維持されている。
+
+live 実行コマンド:
+
+```bash
+cd ${HOME}/source/repos/ai-chat-util
+uv --directory ./app run -m ai_chat_util.cli \
+  --config ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.poc.yml \
+  run_deepagent_chat -p "/home/user/source/repos/ai-platform-poc/docs ディレクトリを段階的に調査し、共通見出しの傾向を説明してください"
+```
+
+実行結果:
+
+- `trace_id=cdc919bc479b47bb90b513376bd4f67b`
+- `route_decided.route_name=deep_agent`
+- `route_decided.reason_code=route.multi_step_investigation_needed`
+- `route_decided.payload.forced_route=deep_agent`
+- `route_decided.payload.explicit_user_directory_paths=["/home/user/source/repos/ai-platform-poc/docs"]`
+- `tool_catalog_resolved.payload.tool_agent_names=["deep_agent"]`
+- `tool_selected.tool_name=analyze_files`
+- `tool_result_received.payload.success=true`
+- `final_answer_validated.reason_code=sufficiency.answer_supported_by_evidence`
+- `final_status=completed`
+
+評価:
+
+- 自律型明示入口でも absolute directory path が concrete target として伝播し、`analyze_files` 実行結果に基づく要約応答まで到達した。
+- 2026-04-07 時点で残していた「自律型入口への反映確認」は、この PoC 再実測で充足した。
+- [A-04-04_SV型DeepAgents実装の検証.md](./A-04-04_SV型DeepAgents実装の検証.md) で確認した supervisor 内 route trace_id `cc93fa4661c84c6d8cad0713cb7a746d` との比較では、standalone 明示入口は `forced_route=deep_agent` を持つ一方、SV 型内部 route は `forced_route=null` であり、両者の使い分けも引き続き監査できる。
+
+補足:
+
+- DeepAgents の監査回帰 test については、[ai-chat-utilチーム調査依頼_完了_A-04-04_DeepAgents監査回帰testのimport追随.md](../99_その他/ai-chat-utilチーム調査依頼_完了_A-04-04_DeepAgents監査回帰testのimport追随.md) への回答で、旧 module path 前提の test 保守ずれが主因と整理され、PoC 側 fresh rerun でも関連 5 テストの再通過を確認した。
+- したがって、A-04-06 側で残るのは test 保守ではなく、停止条件・予算上限・成果物レビューの運用基準整理である。
+
 ## 残課題
 
-- standalone DeepAgents の実行結果と supervisor 内 route としての利用結果を分けて比較する必要がある。
-- [A-04-04_SV型DeepAgents実装の検証.md](./A-04-04_SV型DeepAgents実装の検証.md) と [ai-chat-utilチーム調査依頼_完了_A-04-04_DeepAgentsのdirectory path解釈と展開品質.md](../99_その他/ai-chat-utilチーム調査依頼_完了_A-04-04_DeepAgentsのdirectory path解釈と展開品質.md) で確認した absolute directory path 問題は upstream で root cause と修正方針が整理済みである。自律型入口への反映確認は、PoC 側の再実測として残っている。
-- 停止条件、予算上限、成果物レビューのゲートは A-03 系と合わせて具体化が必要である。
+- 停止条件、予算上限は [A-03-02_停止条件と予算上限の検証.md](./A-03-02_停止条件と予算上限の検証.md) で具体化する。
+- 成果物レビューのゲートと再現・評価ハーネスは [A-03-03_テスト再現評価ハーネスの検証.md](./A-03-03_テスト再現評価ハーネスの検証.md) で具体化する。
 - 本文書では実装基盤の成立性を扱い、モデル能力評価までは扱わない。

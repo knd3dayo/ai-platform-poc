@@ -288,6 +288,96 @@ upstream 再現確認結果:
 - `deep_agent` route が `execute` / `status` / `get_result` を使わず、非同期ジョブ系を `coding_agent` 側へ残す設計根拠も、README と system prompt 実装で確認できた。
 - 既存ディレクトリを空または未検出と返した live 事象については、upstream から root cause と修正内容の回答を受領した。PoC 側では修正版取り込み後の再実測が残る。
 
+### 2026-04-08 修正版取り込み後の PoC 再実測
+
+absolute directory path 問題の残件として、修正版 ai-chat-util を取り込んだ現行環境で PoC 側の同一シナリオを再実行した。
+
+実行コマンド 1: DeepAgents 明示入口 + absolute path
+
+```bash
+cd ${HOME}/source/repos/ai-chat-util
+uv --directory ./app run -m ai_chat_util.cli \
+  --config ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.poc.yml \
+  run_deepagent_chat -p "/home/user/source/repos/ai-platform-poc/docs ディレクトリを段階的に調査し、共通見出しの傾向を説明してください"
+```
+
+実行結果:
+
+- `trace_id=b1d564912a1347eb9dc396293edfbb85`
+- `route_decided.route_name=deep_agent`
+- `route_decided.payload.forced_route=deep_agent`
+- `route_decided.payload.explicit_user_directory_paths=["/home/user/source/repos/ai-platform-poc/docs"]`
+- `tool_selected.tool_name=analyze_files`
+- `tool_result_received.payload.success=true`
+- `final_answer_validated.reason_code=sufficiency.answer_supported_by_evidence`
+- `final_status=completed`
+
+評価:
+
+- `run_deepagent_chat` の明示入口で、absolute directory path が `explicit_user_directory_paths` として監査ログへ残り、`analyze_files` による 20 件解析の後に共通見出し傾向の要約まで到達した。
+- 2026-04-07 時点で観測していた「`docs` を空または未検出とみなす」事象は、この PoC 再実測では再現しなかった。
+
+実行コマンド 2: SV 型内部 route + absolute path
+
+```bash
+cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
+./run-ai-chat-util.sh \
+  --config ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp/ai-chat-util-config.structured-routing.poc.yml \
+  agent_chat -p "deep-agent を使って /home/user/source/repos/ai-platform-poc/docs ディレクトリを段階的に調査し、共通見出しの傾向を説明してください"
+```
+
+実行結果:
+
+- `trace_id=cc93fa4661c84c6d8cad0713cb7a746d`
+- `route_decided.route_name=deep_agent`
+- `route_decided.reason_code=route.multi_step_investigation_needed`
+- `route_decided.payload.forced_route=null`
+- `route_decided.payload.explicit_user_directory_paths=["/home/user/source/repos/ai-platform-poc/docs"]`
+- `tool_selected.tool_name=analyze_files`
+- `tool_result_received.payload.success=true`
+- `final_answer_validated.reason_code=sufficiency.answer_supported_by_evidence`
+- `final_status=completed`
+
+評価:
+
+- supervisor 内 route としての `deep_agent` でも、同じ absolute directory path が正しく伝播し、`analyze_files` 実行結果に基づく要約応答まで到達した。
+- `forced_route=deep_agent` を持つ明示入口と異なり、SV 型内部 route では `forced_route=null` のまま `route.multi_step_investigation_needed` で選択されており、両経路の使い分けも引き続き監査できる。
+
+回帰テスト実行コマンド:
+
+```bash
+cd ${HOME}/source/repos/ai-chat-util/app
+uv run pytest src/ai_chat_util/base/agent/_test_/test_tool_guard_wrapping.py -q \
+  -k 'mcp_client_chat_emits_deep_agent_audit_events'
+```
+
+実行結果:
+
+- `1 failed, 126 deselected`
+- `test_mcp_client_chat_emits_deep_agent_audit_events` は `ModuleNotFoundError: No module named 'ai_chat_util.base.agent.mcp_client'` で失敗した。
+
+評価:
+
+- live の監査契約は明示入口・SV 型内部 route の両方で確認できており、absolute directory path 問題に関する PoC 側残件は解消した。
+- 一方で監査回帰テストは、現行モジュール構成に追随できていない既存失敗が残る。これは live 挙動の不成立ではなく、テスト保守の残件として切り分ける。
+- なお、2026-04-08 追加追試結果で観測した `/home/user/source/repos/ai-platform-poc/work` の `Path not found` は、現行 PoC ワークスペースに当該ディレクトリ自体が存在しないため、absolute directory path 修正の未解消根拠には使わない。
+
+### 2026-04-08 ai-chat-util チーム回答反映（監査回帰 test）
+
+[ai-chat-utilチーム調査依頼_完了_A-04-04_DeepAgents監査回帰testのimport追随.md](../99_その他/ai-chat-utilチーム調査依頼_完了_A-04-04_DeepAgents監査回帰testのimport追随.md) への回答により、`test_mcp_client_chat_emits_deep_agent_audit_events` 系の failure は DeepAgents 本体の監査契約不成立ではなく、旧 `mcp_client` / `mcp_client_util` 前提の test が現行 module 再編へ追随できていなかったことが主因と整理された。
+
+確認できた点:
+
+- test の import 先は現行 `agent_client.py` / `agent_client_util.py` を正本とすべきこと
+- fake `decide_route` / `create_workflow` などの test double も現行呼び出しシグネチャへ追随が必要だったこと
+- ai-chat-util チーム側では関連 5 テストが `5 passed, 122 deselected` で再通過したこと
+- PoC 側でも同じ 5 テストを fresh rerun し、`5 passed, 122 deselected in 6.35s` を確認したこと
+
+評価:
+
+- A-04-04 の残件として切り分けていた DeepAgents 監査回帰 test 保守は解消した。
+- absolute directory path 問題と監査回帰 test 問題の両方について、PoC 側の受け入れ判断を阻害する残件はなくなった。
+
 ### 2026-04-08 追加追試結果
 
 SV 型の主入口 [A-04-03_SV型LangGraph独自実装の検証.md](./A-04-03_SV型LangGraph独自実装の検証.md) の追試として、structured routing 配下の deep investigation シナリオを再実行した。
@@ -321,8 +411,6 @@ cd ${HOME}/source/repos/ai-platform-poc/infra/31-ai-chat-util-mcp
 
 ## 残課題
 
-- `run_deepagent_chat` は forced deep route、`agent_chat` の `deep_agent` は SV 型内部 route として使い分けられることは確認できたが、利用ガイドとしてどの要求をどちらへ寄せるかの整理はなお必要である。
-- DeepAgents を SV 型として採用する場合の停止条件、予算上限、監査出力の運用基準は追加検証が必要である。
-- live 実行では既存ディレクトリを空または未検出と返すケースに加え、`/home/user/source/repos/ai-platform-poc/work` を `Path not found` と扱うケースもあり、DeepAgents の path 解釈・ディレクトリ展開品質は追加確認が必要である。
-- `test_mcp_client_chat_emits_deep_agent_audit_events` は現行モジュール構成に追随できていない既存失敗があり、監査回帰テストの保守が必要である。
+- A-04-04 の受け入れ条件に対する残課題はなし。DeepAgents 明示入口と SV 型内部 route の両方で、absolute directory path を含む `docs` 調査シナリオが PoC 側 live で再成立した。
+- `run_deepagent_chat` と `agent_chat` の使い分け指針、停止条件、予算上限、監査出力の詳細運用基準は、別論点として継続整理の余地がある。
 - 自律型としての DeepAgents は A-04-06 で別途整理する。
