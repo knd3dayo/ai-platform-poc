@@ -279,6 +279,24 @@ same `trace_id` resume については、本書単独の live 完走ではなく
 | deep_agent route 境界 | 確認済み | trace_id `e4e63e84e13a4d0eb8f07c29d48d1ad2` で route 境界を確認した。deep_agent 側の内容品質は A-04-04 / A-04-06 へ切り分ける。 |
 | pause 後の再開接続点 | 確認済み | absolute path / generic の両シナリオで pause 応答と trace_id を確認した。same `trace_id` resume 契約の正本は A-02-02 と BFF 実装整合で確認した。 |
 
+### 2026-04-09 A-03-03 checklist 適用
+
+本書の evidence を [A-03-03_テスト再現評価ハーネスの検証.md](./A-03-03_テスト再現評価ハーネスの検証.md) の review checklist に沿って整理すると、次のとおりである。
+
+| 観点 | 記録内容 | 判定 |
+| --- | --- | --- |
+| 相関情報 | trace_id `5d8c0fc51d3a4078895d0196ea06b924`、`1ff4a515816a4b62b95bef3178c0f07c`、`e4e63e84e13a4d0eb8f07c29d48d1ad2`、config path を記録済み | OK |
+| 自動テスト | 本書の主眼は live route / pause 契約であり、resume 正本は A-02-02、deep_agent 内容品質は A-04-04 / A-04-06 を参照する構成を明示済み | OK |
+| 再現材料 | `show_config`、absolute path、generic、deep investigation の具体 command と audit 観点を記録済み | OK |
+| 成果物 | route_name、reason_code、tool_selected、final_status、pause 応答 trace_id を回収済み | OK |
+| 副作用統制 | approval 対象ツールは `paused` に収束し、resume 契約は A-02-02 正本へ接続する整理 | OK |
+| レビュー判断 | SV 型 LangGraph 主入口として acceptance 条件を満たす | Accept |
+
+判断理由:
+
+- 本書の対象は route / approval / pause / resume 接続点の成立性であり、live 実測と正本参照先の切り分けが明確である。
+- deep_agent 側の内容品質や cross-cutting な停止条件は別文書へ切り分け済みであり、本書スコープの implementation acceptance は成立すると判断できる。
+
 ## 残課題
 
 - A-04-03 の受け入れ条件に対する残課題はなし。
