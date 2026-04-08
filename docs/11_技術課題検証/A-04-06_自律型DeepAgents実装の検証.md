@@ -226,6 +226,24 @@ uv --directory ./app run -m ai_chat_util.cli \
 - DeepAgents の監査回帰 test については、[ai-chat-utilチーム調査依頼_完了_A-04-04_DeepAgents監査回帰testのimport追随.md](../99_その他/ai-chat-utilチーム調査依頼_完了_A-04-04_DeepAgents監査回帰testのimport追随.md) への回答で、旧 module path 前提の test 保守ずれが主因と整理され、PoC 側 fresh rerun でも関連 5 テストの再通過を確認した。
 - したがって、A-04-06 側で残るのは test 保守ではなく、停止条件・予算上限・成果物レビューの運用基準整理である。
 
+### 2026-04-08 A-03-03 checklist 適用
+
+本書の evidence を [A-03-03_テスト再現評価ハーネスの検証.md](./A-03-03_テスト再現評価ハーネスの検証.md) の review checklist に沿って整理すると、次のとおりである。
+
+| 観点 | 記録内容 | 判定 |
+| --- | --- | --- |
+| 相関情報 | `trace_id=cdc919bc479b47bb90b513376bd4f67b`、config path、absolute directory path 入力が記録済み | OK |
+| 自動テスト | `uv run pytest src/ai_chat_util/_test_/test_deepagent_entrypoints.py -q` は `10 passed`、監査回帰 rerun は `5 passed, 122 deselected` | OK |
+| 再現材料 | 明示入口の live command、route / tool / final_status の audit 観点が記録済み | OK |
+| 成果物 | `explicit_user_directory_paths`、`tool_selected=analyze_files`、`final_status=completed` を回収済み | OK |
+| 副作用統制 | 本シナリオは読み取り専用であり、停止条件・予算上限は [A-03-02_停止条件と予算上限の検証.md](./A-03-02_停止条件と予算上限の検証.md) に切り出して管理 | OK |
+| レビュー判断 | 読み取り専用の自律型 DeepAgents 明示入口としては acceptance 条件を満たす | Accept |
+
+判断理由:
+
+- 本書の対象は read-only な自律調査シナリオであり、trace、test、再現 command、audit evidence が揃っている。
+- cross-cutting な停止条件と成果物レビュー基準は A-03-02 / A-03-03 の正本へ分離する前提で、本書スコープの implementation acceptance は成立すると判断できる。
+
 ## 残課題
 
 - 停止条件、予算上限は [A-03-02_停止条件と予算上限の検証.md](./A-03-02_停止条件と予算上限の検証.md) で具体化する。
