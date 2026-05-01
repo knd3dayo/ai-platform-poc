@@ -1,0 +1,21 @@
+services:
+  unoserver:
+    build:
+      context: .
+      args:
+        - USER_ID=${UID:-1000}
+        - GROUP_ID=${GID:-1000}
+    image: my-unoserver:1.0
+    container_name: unoserver
+    ports:
+      - "3030:2003"
+    networks:
+      - ai_platform_internal
+      - ai_platform_egress
+    restart: always
+
+networks:
+  ai_platform_egress:
+    external: true
+  ai_platform_internal:
+    external: true
