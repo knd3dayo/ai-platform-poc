@@ -274,7 +274,7 @@ async def main():
 		st = await TaskManager.get_status(task_id, tail=10)
 		print('poll', st.status, st.sub_status)
 		if st.status == 'exited':
-			print('artifacts', st.artifacts)
+			print('artifacts', startifacts)
 			return
 		await asyncio.sleep(0.5)
 

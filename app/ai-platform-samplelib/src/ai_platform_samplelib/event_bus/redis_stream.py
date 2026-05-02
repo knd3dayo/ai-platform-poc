@@ -125,7 +125,7 @@ class RedisStreamEventBus(TaskStatusEventBus):
             "event_type": ev.event_type,
             "occurred_at": str(ev.occurred_at),
             "task_id": status.task_id,
-            "trace_id": status.trace_id or "",
+            "trace_id": statustrace_id or "",
             "payload": payload,
         }
 

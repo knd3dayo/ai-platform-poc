@@ -125,9 +125,9 @@ AIエージェントの一般的な用語として「スーパーバイザー」
 ### SV型エージェントの実装方針
 #### 初期段階
 * SV型エージェントはLangGraphで実装し、コーディングエージェントをMCPサーバー経由で起動し、指示とタスクIDを渡す。なおタスクIDはワークスペースのパスの一部にもなる。
-* SV型エージェントは実行全体で一意の `trace_id` を採番し、自律型エージェント実行結果の `TaskStatus.trace_id` として伝播する。
+* SV型エージェントは実行全体で一意の `trace_id` を採番し、自律型エージェント実行結果の `TaskStatustrace_id` として伝播する。
    * 実装メモ:
-      * SV→自律の呼び出し引数として `trace_id` を渡し、自律側の `TaskStatus.trace_id` に保存する（相関ID）。
+      * SV→自律の呼び出し引数として `trace_id` を渡し、自律側の `TaskStatustrace_id` に保存する（相関ID）。
       * executor の `task_id` は、サブタスクごとに別採番（UUID等）する（workspace/compose project 名の衝突回避のため）。
       * pause/resume のためのHITLセッションJSONにも `trace_id` を保存し、再開後も同一 `trace_id` を引き継ぐ。
    * 補足: `task_id` と `trace_id` は役割が異なるため、strict に `trace_id = task_id` は要件としない（必要になった場合は別途設計する）。
@@ -147,7 +147,7 @@ AIエージェントの一般的な用語として「スーパーバイザー」
 | --- | --- | --- | --- |
 | SVは LangGraph で実装 | **実装済み** | `ai_platform_samplelib/application/super_visor/core/parallel_agent_workflow.py` | Planner→worker 並列実行→要約の PoC ワークフローを実装。 |
 | SV→自律の呼び出しは API/MCP サーバー経由 | **実装済み（MCPに統一）** | `ai_platform_samplelib/application/super_visor/core/tools.py` / `.../core/autonomous_executor_mcp_client.py` | SV→executor は MCP（streamable-http）を既定経路とする。 |
-| `trace_id` 採番・伝播（pause/resume でも維持） | **実装済み** | `ai_platform_samplelib/application/super_visor/cli/main.py` / `.../model/hitl_session.py` / `.../core/parallel_agent_workflow.py` | SV が `trace_id` を生成し、executor 実行結果（TaskStatus.trace_id）へ渡せる。HITL セッションJSONにも保持可能。 |
+| `trace_id` 採番・伝播（pause/resume でも維持） | **実装済み** | `ai_platform_samplelib/application/super_visor/cli/main.py` / `.../model/hitl_session.py` / `.../core/parallel_agent_workflow.py` | SV が `trace_id` を生成し、executor 実行結果（TaskStatustrace_id）へ渡せる。HITL セッションJSONにも保持可能。 |
 | `TaskStatus` を逐次受け取り、ユーザー/イベント基盤へ通知 | **実装済み（既定は外部通知なし）** | `ai_platform_samplelib/application/super_visor/core/parallel_agent_workflow.py` + `ai_platform_samplelib/event_bus/*` | `publish_task_status()` は行うが、EventBus既定は `noop`。`SV_EVENT_BUS_TYPE=redis` 等で外部化可能。 |
 | HITL（承認・一時停止・resume） | **実装済み（CLI中心）** | `ai_platform_samplelib/application/super_visor/cli/main.py` / `.../model/hitl_session.py` / `.../core/parallel_agent_workflow.py` | **乖離（非同期HITL）**: pause/resume は「サブタスク境界」で、executor 実行途中のチェックポイント復元は扱っていない。 |
 | SV API を用意（ホスト上プロセス） | **未実装（CLIのみ）** | （SVの FastAPI/HTTP サーバ実装が見当たらない） | **乖離**: `run`/`resume` の CLI が中心。BFF からの HTTP 呼び出しフローは未成立。 |

@@ -58,7 +58,7 @@
 
 ### 1. 再開キーの定義
 
-- `ChatRequest.trace_id` は W3C trace-id 部分の 32 桁 hex として定義されている。
+- `ChatRequesttrace_id` は W3C trace-id 部分の 32 桁 hex として定義されている。
 - `traceparent` 全体が渡された場合でも trace-id 部分へ正規化される。
 - 全ゼロの `trace_id` は不正として拒否される。
 
@@ -72,7 +72,7 @@
 
 - API / ライブラリ利用時は、pause 時に `status="paused"` と `trace_id` が返る。
 - 再開は同じ `trace_id` を付けた次の `ChatRequest` を送るだけで成立する。
-- README_FOR_EXPERTS でも、プロセスを跨ぐ再開は API / ライブラリ利用で `ChatRequest.trace_id` を指定する前提が明示されている。
+- README_FOR_EXPERTS でも、プロセスを跨ぐ再開は API / ライブラリ利用で `ChatRequesttrace_id` を指定する前提が明示されている。
 
 ### 4. CLI 制約
 
