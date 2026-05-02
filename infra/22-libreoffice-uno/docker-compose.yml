@@ -7,8 +7,21 @@ services:
         - GROUP_ID=${GID:-1000}
     image: my-unoserver:1.0
     container_name: unoserver
+    command:
+      - --interface
+      - 0.0.0.0
+      - --port
+      - "2003"
+      - --uno-interface
+      - 0.0.0.0
+      - --uno-port
+      - "2002"
     ports:
+      - "2002:2002"
       - "2003:2003"
+      - "2004:2004"
+    volumes:
+      - ${HOME}/data/libreoffice-uno/documents:/documents
     networks:
       - ai_platform_internal
       - ai_platform_egress
