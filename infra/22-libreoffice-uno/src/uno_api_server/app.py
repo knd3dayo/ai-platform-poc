@@ -3,6 +3,7 @@ from __future__ import annotations
 import mimetypes
 import os
 from pathlib import Path
+from urllib.parse import quote
 from xmlrpc.client import ServerProxy
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -82,5 +83,14 @@ async def convert_document(
 
     media_type = mimetypes.guess_type(f"result.{output_extension}")[0] or "application/octet-stream"
     download_name = _build_download_filename(file.filename, output_extension)
-    headers = {"Content-Disposition": f'attachment; filename="{download_name}"'}
+    encoded_name = quote(download_name, safe="")
+    # filename= には latin-1 で表現できる ASCII フォールバック名のみ使用し、
+    # 日本語等は filename*=UTF-8''... (RFC 5987) で渡す
+    ascii_name = Path(download_name).stem.encode("ascii", errors="replace").decode("ascii") + f".{output_extension}"
+    headers = {
+        "Content-Disposition": (
+            f'attachment; filename="{ascii_name}"; '
+            f"filename*=UTF-8''{encoded_name}"
+        )
+    }
     return Response(content=converted, media_type=media_type, headers=headers)
